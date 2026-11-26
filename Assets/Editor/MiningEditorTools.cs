@@ -46,34 +46,144 @@ public static class MiningEditorTools
         }
 
         AttachGrabHands();
+        GameObject pickaxePrefab = BuildPickaxePrefab();
 
         GameObject root = new GameObject("MiningArea");
+
+        GameObject manager = new GameObject("GameManager");
+        manager.transform.SetParent(root.transform, false);
+        manager.AddComponent<Wallet>();
+        manager.AddComponent<WalletHud>();
+
         Vector3[] rockPositions =
         {
-            new Vector3(-1.8f, 0f, 3.5f),
-            new Vector3(-5.5f, 0f, 2.5f),
-            new Vector3(-7.5f, 0f, -1f),
-            new Vector3(-6f, 0f, 6f)
+            new Vector3(-4f, 0f, 3.5f),
+            new Vector3(-7f, 0f, 2f),
+            new Vector3(-8f, 0f, -2f),
+            new Vector3(-6.5f, 0f, 7f)
         };
 
         for (int i = 0; i < rockPositions.Length; i++)
         {
+            Quaternion rotation = Quaternion.Euler(0f, 70f * i + 20f, 0f);
+
             GameObject rock = (GameObject)PrefabUtility.InstantiatePrefab(rockPrefab, root.transform);
             rock.name = "MiningRock " + (i + 1);
-            rock.transform.position = rockPositions[i];
-            rock.transform.rotation = Quaternion.Euler(0f, 70f * i + 20f, 0f);
+            rock.transform.SetPositionAndRotation(rockPositions[i], rotation);
+
+            GameObject spawnObject = new GameObject("RockSpawn " + (i + 1));
+            spawnObject.transform.SetParent(root.transform, false);
+            spawnObject.transform.SetPositionAndRotation(rockPositions[i], rotation);
+            RockSpawnPoint spawnPoint = spawnObject.AddComponent<RockSpawnPoint>();
+            SerializedObject spawnSerialized = new SerializedObject(spawnPoint);
+            spawnSerialized.FindProperty("rockPrefab").objectReferenceValue = rockPrefab;
+            spawnSerialized.FindProperty("currentRock").objectReferenceValue = rock.GetComponent<MineableRock>();
+            spawnSerialized.ApplyModifiedProperties();
         }
 
-        GameObject table = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        table.name = "PickaxeTable";
-        table.transform.SetParent(root.transform, false);
-        table.transform.position = new Vector3(-0.5f, 0.4f, 2.2f);
-        table.transform.localScale = new Vector3(0.8f, 0.8f, 0.5f);
-        table.layer = LayerMask.NameToLayer("Ground");
+        BuildShop(root.transform, pickaxePrefab);
+    }
+
+    private static GameObject BuildPickaxePrefab()
+    {
+        EnsureFolder("Assets", "Prefabs");
+        EnsureFolder("Assets/Prefabs", "Mining");
 
         GameObject pickaxe = CreatePickaxe();
-        pickaxe.transform.SetParent(root.transform, true);
-        pickaxe.transform.position = new Vector3(-0.5f, 0.86f, 2.2f);
+        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(pickaxe, PrefabFolder + "/Pickaxe.prefab");
+        Object.DestroyImmediate(pickaxe);
+        return prefab;
+    }
+
+    private static void BuildShop(Transform parent, GameObject pickaxePrefab)
+    {
+        int groundLayer = LayerMask.NameToLayer("Ground");
+
+        GameObject root = new GameObject("Shop");
+        root.transform.SetParent(parent, false);
+        root.transform.position = new Vector3(0f, 0f, 3f);
+        Transform shopRoot = root.transform;
+
+        Color wood = new Color(0.45f, 0.3f, 0.18f);
+        Color board = new Color(0.08f, 0.1f, 0.14f);
+
+        ShopBlock(shopRoot, "Counter", new Vector3(0f, 0.5f, -0.05f), new Vector3(2.4f, 1f, 0.5f), "ShopWood", wood, groundLayer);
+        ShopBlock(shopRoot, "Screen", new Vector3(0f, 1.95f, 0.35f), new Vector3(2.6f, 1.6f, 0.1f), "ShopScreen", board, groundLayer);
+
+        Color gold = new Color(1f, 0.85f, 0.3f);
+        Color white = new Color(0.95f, 0.95f, 0.95f);
+        TextMesh title = TextFactory.Create(shopRoot, "Title", "RIPPED SHOP", new Vector3(0f, 2.5f, 0.25f), 0.02f, gold, TextAnchor.MiddleCenter);
+        TextMesh price = TextFactory.Create(shopRoot, "ItemPrice", "PICKAXE - 50 COINS", new Vector3(0f, 2.15f, 0.25f), 0.0125f, white, TextAnchor.MiddleCenter);
+        TextMesh coins = TextFactory.Create(shopRoot, "Coins", "COINS: 0", new Vector3(0f, 1.85f, 0.25f), 0.0125f, gold, TextAnchor.MiddleCenter);
+        TextMesh status = TextFactory.Create(shopRoot, "Status", "TOUCH BUY TO GET A PICKAXE", new Vector3(0f, 1.55f, 0.25f), 0.009f, new Color(0.6f, 0.9f, 1f), TextAnchor.MiddleCenter);
+        title.gameObject.name = "Title";
+
+        GameObject spawn = new GameObject("PickaxeSpawn");
+        spawn.transform.SetParent(shopRoot, false);
+        spawn.transform.localPosition = new Vector3(0f, 1.1f, -0.05f);
+        spawn.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
+
+        Shop shop = root.AddComponent<Shop>();
+        SerializedObject shopSerialized = new SerializedObject(shop);
+        shopSerialized.FindProperty("pickaxePrefab").objectReferenceValue = pickaxePrefab;
+        shopSerialized.FindProperty("pickaxeSpawn").objectReferenceValue = spawn.transform;
+        shopSerialized.FindProperty("coinText").objectReferenceValue = coins;
+        shopSerialized.FindProperty("priceText").objectReferenceValue = price;
+        shopSerialized.FindProperty("statusText").objectReferenceValue = status;
+        shopSerialized.ApplyModifiedProperties();
+
+        CreateShopButton(shopRoot, shop, ShopAction.BuyPickaxe, "BUY", new Vector3(-0.7f, 1.25f, 0.22f), new Color(0.15f, 0.65f, 0.25f));
+        CreateShopButton(shopRoot, shop, ShopAction.RecallPickaxe, "RETURN PICKAXE", new Vector3(0.7f, 1.25f, 0.22f), new Color(0.85f, 0.55f, 0.1f));
+
+        GameObject bin = new GameObject("SellBin");
+        bin.transform.SetParent(shopRoot, false);
+        bin.transform.localPosition = new Vector3(2.4f, 0f, -0.4f);
+        Color binColor = new Color(0.25f, 0.25f, 0.3f);
+        ShopBlock(bin.transform, "BinFloor", new Vector3(0f, 0.025f, 0f), new Vector3(0.9f, 0.05f, 0.9f), "ShopBin", binColor, groundLayer);
+        ShopBlock(bin.transform, "BinWallLeft", new Vector3(-0.425f, 0.25f, 0f), new Vector3(0.05f, 0.5f, 0.9f), "ShopBin", binColor, groundLayer);
+        ShopBlock(bin.transform, "BinWallRight", new Vector3(0.425f, 0.25f, 0f), new Vector3(0.05f, 0.5f, 0.9f), "ShopBin", binColor, groundLayer);
+        ShopBlock(bin.transform, "BinWallBack", new Vector3(0f, 0.25f, 0.425f), new Vector3(0.9f, 0.5f, 0.05f), "ShopBin", binColor, groundLayer);
+        ShopBlock(bin.transform, "BinWallFront", new Vector3(0f, 0.25f, -0.425f), new Vector3(0.9f, 0.5f, 0.05f), "ShopBin", binColor, groundLayer);
+        TextFactory.Create(bin.transform, "BinLabel", "SELL CRYSTALS\n+5 COINS EACH", new Vector3(0f, 1.0f, 0f), 0.0125f, gold, TextAnchor.MiddleCenter);
+
+        SellBin sellBin = bin.AddComponent<SellBin>();
+        SerializedObject binSerialized = new SerializedObject(sellBin);
+        binSerialized.FindProperty("boxCenter").vector3Value = new Vector3(0f, 0.3f, 0f);
+        binSerialized.FindProperty("boxSize").vector3Value = new Vector3(0.8f, 0.6f, 0.8f);
+        binSerialized.ApplyModifiedProperties();
+    }
+
+    private static GameObject ShopBlock(Transform parent, string blockName, Vector3 localPosition, Vector3 scale, string materialName, Color color, int layer)
+    {
+        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        block.name = blockName;
+        block.transform.SetParent(parent, false);
+        block.transform.localPosition = localPosition;
+        block.transform.localScale = scale;
+        block.GetComponent<MeshRenderer>().sharedMaterial = SolidMaterial(materialName, color);
+        if (layer >= 0)
+        {
+            block.layer = layer;
+        }
+
+        return block;
+    }
+
+    private static void CreateShopButton(Transform parent, Shop shop, ShopAction action, string label, Vector3 localPosition, Color color)
+    {
+        GameObject button = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        button.name = "Button " + label;
+        button.transform.SetParent(parent, false);
+        button.transform.localPosition = localPosition;
+        button.transform.localScale = new Vector3(0.9f, 0.26f, 0.12f);
+        button.GetComponent<MeshRenderer>().sharedMaterial = SolidMaterial("ShopButton" + action, color);
+        button.GetComponent<BoxCollider>().isTrigger = true;
+
+        ShopButton shopButton = button.AddComponent<ShopButton>();
+        shopButton.Configure(shop, action);
+        EditorUtility.SetDirty(shopButton);
+
+        TextFactory.Create(parent, "Label " + label, label, localPosition + new Vector3(0f, 0f, -0.08f), 0.0085f, Color.white, TextAnchor.MiddleCenter);
     }
 
     private static GameObject BuildPrefabs()

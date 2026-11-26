@@ -141,15 +141,19 @@ public static class LocomotionEditorTools
         LocomotionSettings settings = PrepareSettings();
 
         RenderSettings.ambientMode = AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.38f, 0.38f, 0.42f);
+        RenderSettings.ambientLight = new Color(0.3f, 0.33f, 0.34f);
+        RenderSettings.fog = true;
+        RenderSettings.fogMode = FogMode.ExponentialSquared;
+        RenderSettings.fogColor = new Color(0.08f, 0.1f, 0.1f);
+        RenderSettings.fogDensity = 0.022f;
 
         if (createLight)
         {
             GameObject lightObject = new GameObject("Directional Light");
             Light light = lightObject.AddComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.1f;
-            light.color = new Color(1f, 0.96f, 0.9f);
+            light.intensity = 0.55f;
+            light.color = new Color(0.85f, 0.95f, 1f);
             lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
         }
 
@@ -159,14 +163,14 @@ public static class LocomotionEditorTools
         GameObject root = new GameObject("MovementTestArea");
         Transform area = root.transform;
 
-        Color floorColor = new Color(0.25f, 0.25f, 0.28f);
+        Color floorColor = new Color(0.3f, 0.31f, 0.32f);
         CreateBlock(area, "FloorWest", new Vector3(-7f, -2f, 10f), new Vector3(16f, 4f, 40f), Vector3.zero, "Ground", "Floor", floorColor);
         CreateBlock(area, "FloorEast", new Vector3(10f, -2f, 10f), new Vector3(10f, 4f, 40f), Vector3.zero, "Ground", "Floor", floorColor);
         CreateBlock(area, "FloorSouthMid", new Vector3(3f, -2f, -3f), new Vector3(4f, 4f, 14f), Vector3.zero, "Ground", "Floor", floorColor);
         CreateBlock(area, "FloorNorthMid", new Vector3(3f, -2f, 19f), new Vector3(4f, 4f, 22f), Vector3.zero, "Ground", "Floor", floorColor);
         CreateBlock(area, "PitBottom", new Vector3(3f, -3.5f, 6f), new Vector3(4f, 1f, 4f), Vector3.zero, "Ground", "Floor", floorColor);
 
-        Color rockColor = new Color(0.45f, 0.3f, 0.2f);
+        Color rockColor = new Color(0.36f, 0.42f, 0.4f);
         CreateBlock(area, "SteepRamp", new Vector3(-9f, 1.9f, 8f), new Vector3(4f, 0.4f, 8f), new Vector3(-30f, 0f, 0f), "Ground", "Climbable", rockColor);
         CreateBlock(area, "Ledge", new Vector3(-3f, 0.75f, 8f), new Vector3(4f, 1.5f, 4f), Vector3.zero, "Ground", "Climbable", rockColor);
         CreateBlock(area, "LedgeHigh", new Vector3(-3f, 1.5f, 13f), new Vector3(4f, 3f, 3f), Vector3.zero, "Ground", "Climbable", rockColor);
@@ -177,7 +181,7 @@ public static class LocomotionEditorTools
         CreateBlock(area, "BouncePad", new Vector3(10f, 0.05f, 14f), new Vector3(4f, 0.1f, 4f), Vector3.zero, "Bouncy", "Bounce", new Color(0.9f, 0.2f, 0.8f));
         CreateBlock(area, "NoGripWall", new Vector3(10f, 1.5f, 24f), new Vector3(6f, 3f, 0.3f), Vector3.zero, "NoGrip", "NoGrip", new Color(0.85f, 0.9f, 0.95f));
 
-        Color wallColor = new Color(0.35f, 0.35f, 0.4f);
+        Color wallColor = new Color(0.52f, 0.56f, 0.56f);
         CreateBlock(area, "CorridorWallA", new Vector3(-12.65f, 1.25f, 20f), new Vector3(0.3f, 2.5f, 8f), Vector3.zero, "Ground", "Wall", wallColor);
         CreateBlock(area, "CorridorWallB", new Vector3(-11.35f, 1.25f, 20f), new Vector3(0.3f, 2.5f, 8f), Vector3.zero, "Ground", "Wall", wallColor);
         CreateBlock(area, "CorridorRoof", new Vector3(-12f, 2.65f, 20f), new Vector3(1.6f, 0.3f, 8f), Vector3.zero, "Ground", "Wall", wallColor);
@@ -196,9 +200,49 @@ public static class LocomotionEditorTools
         CreateLabel(area, "TIGHT CORRIDOR", new Vector3(-12f, 3.6f, 20f), 0f);
         CreateLabel(area, "HAZARD", new Vector3(-3f, 2.5f, -4f), 180f);
 
+        BuildLabShell(area);
+
         CreatePlayerRig(settings, spawn.transform);
 
         MiningEditorTools.PopulateMiningContent();
+    }
+
+    private static void BuildLabShell(Transform area)
+    {
+        Color shellColor = new Color(0.45f, 0.49f, 0.49f);
+        Color trimColor = new Color(0.9f, 0.75f, 0.1f);
+        float wallHeight = 6f;
+
+        CreateBlock(area, "LabWallWest", new Vector3(-15.2f, wallHeight * 0.5f, 10f), new Vector3(0.4f, wallHeight, 40.8f), Vector3.zero, "Ground", "LabWall", shellColor);
+        CreateBlock(area, "LabWallEast", new Vector3(15.2f, wallHeight * 0.5f, 10f), new Vector3(0.4f, wallHeight, 40.8f), Vector3.zero, "Ground", "LabWall", shellColor);
+        CreateBlock(area, "LabWallSouth", new Vector3(0f, wallHeight * 0.5f, -10.2f), new Vector3(30.8f, wallHeight, 0.4f), Vector3.zero, "Ground", "LabWall", shellColor);
+        CreateBlock(area, "LabWallNorth", new Vector3(0f, wallHeight * 0.5f, 30.2f), new Vector3(30.8f, wallHeight, 0.4f), Vector3.zero, "Ground", "LabWall", shellColor);
+        GameObject ceiling = CreateBlock(area, "LabCeiling", new Vector3(0f, wallHeight + 0.2f, 10f), new Vector3(30.8f, 0.4f, 40.8f), Vector3.zero, "Ground", "LabCeiling", new Color(0.28f, 0.3f, 0.3f));
+        ceiling.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+
+        CreateBlock(area, "TrimWest", new Vector3(-14.95f, 0.15f, 10f), new Vector3(0.1f, 0.3f, 40f), Vector3.zero, "Ground", "LabTrim", trimColor);
+        CreateBlock(area, "TrimEast", new Vector3(14.95f, 0.15f, 10f), new Vector3(0.1f, 0.3f, 40f), Vector3.zero, "Ground", "LabTrim", trimColor);
+
+        Material lightMaterial = GetMaterial("LabLight", new Color(0.95f, 1f, 1f));
+        lightMaterial.EnableKeyword("_EMISSION");
+        if (lightMaterial.HasProperty("_EmissionColor"))
+        {
+            lightMaterial.SetColor("_EmissionColor", new Color(0.9f, 1f, 1f) * 1.6f);
+        }
+
+        for (int x = -1; x <= 1; x++)
+        {
+            for (int z = 0; z < 5; z++)
+            {
+                GameObject panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                panel.name = "CeilingLight";
+                panel.transform.SetParent(area, false);
+                panel.transform.position = new Vector3(x * 9f, wallHeight - 0.03f, -4f + z * 8f);
+                panel.transform.localScale = new Vector3(2.2f, 0.06f, 0.7f);
+                panel.GetComponent<MeshRenderer>().sharedMaterial = lightMaterial;
+                Object.DestroyImmediate(panel.GetComponent<Collider>());
+            }
+        }
     }
 
     private static void CreatePlayerRig(LocomotionSettings settings, Transform spawn)
@@ -216,7 +260,7 @@ public static class LocomotionEditorTools
         camera.nearClipPlane = 0.05f;
         camera.farClipPlane = 200f;
         camera.clearFlags = CameraClearFlags.SolidColor;
-        camera.backgroundColor = new Color(0.05f, 0.05f, 0.07f);
+        camera.backgroundColor = new Color(0.08f, 0.1f, 0.1f);
         head.AddComponent<AudioListener>();
         head.AddComponent<LocomotionDebugOverlay>();
 

@@ -13,6 +13,8 @@ public sealed class MineableRock : MonoBehaviour
     [SerializeField] private float chunkSpawnRadius = 0.2f;
     [SerializeField] private float hitCooldownSeconds = 0.25f;
     [SerializeField, Range(0f, 1f)] private float chunkScaleVariance = 0.25f;
+    [Tooltip("Multiplies the rock's size at runtime. Lower this to make rocks smaller.")]
+    [SerializeField, Range(0.05f, 2f)] private float sizeMultiplier = 0.4f;
 
     private int hits;
     private float nextHitTime;
@@ -22,7 +24,6 @@ public sealed class MineableRock : MonoBehaviour
     private AudioClip hitClip;
     private AudioClip breakClip;
     private bool broken;
-    private int crystalsDropped;
 
     public int Hits => hits;
     public int HitsRemaining => Mathf.Max(0, hitsToBreak - hits);
@@ -35,9 +36,21 @@ public sealed class MineableRock : MonoBehaviour
             visualRoot = transform;
         }
 
+        // Crystals stuck on the rock are never shown. Chunks only appear when the rock breaks.
+        if (attachedCrystals != null)
+        {
+            for (int i = 0; i < attachedCrystals.Length; i++)
+            {
+                if (attachedCrystals[i] != null)
+                {
+                    attachedCrystals[i].gameObject.SetActive(false);
+                }
+            }
+        }
+
+        visualRoot.localScale *= sizeMultiplier;
         baseLocalPosition = visualRoot.localPosition;
         baseLocalScale = visualRoot.localScale;
-
         audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.spatialBlend = 1f;
         audioSource.playOnAwake = false;
@@ -56,7 +69,6 @@ public sealed class MineableRock : MonoBehaviour
 
         nextHitTime = Time.time + hitCooldownSeconds;
         hits++;
-
         if (hits >= hitsToBreak)
         {
             Break(point);
@@ -65,52 +77,26 @@ public sealed class MineableRock : MonoBehaviour
 
         audioSource.pitch = Random.Range(0.9f, 1.1f);
         audioSource.PlayOneShot(hitClip, 1f);
-        DropAttachedCrystal(point, direction);
         StopAllCoroutines();
         StartCoroutine(Shake(direction));
         return true;
-    }
-
-    private void DropAttachedCrystal(Vector3 point, Vector3 direction)
-    {
-        if (chunkPrefab == null || attachedCrystals == null || attachedCrystals.Length == 0)
-        {
-            return;
-        }
-
-        int perHit = Mathf.Max(1, Mathf.CeilToInt(attachedCrystals.Length / (float)hitsToBreak));
-        int dropped = 0;
-        while (dropped < perHit && crystalsDropped < attachedCrystals.Length)
-        {
-            Transform crystal = attachedCrystals[crystalsDropped];
-            crystalsDropped++;
-            if (crystal == null)
-            {
-                continue;
-            }
-
-            SpawnChunk(crystal.position, (crystal.up + direction.normalized * 0.4f + Random.insideUnitSphere * 0.3f).normalized * burstSpeed * 0.5f, crystal.rotation);
-            crystal.gameObject.SetActive(false);
-            dropped++;
-        }
     }
 
     private void Break(Vector3 point)
     {
         broken = true;
         StopAllCoroutines();
-
         if (chunkPrefab != null)
         {
             int count = Random.Range(minChunks, maxChunks + 1);
-            Vector3 center = transform.position + Vector3.up * 0.15f;
-
+            float radius = chunkSpawnRadius * sizeMultiplier;
+            Vector3 center = transform.position + Vector3.up * 0.15f * sizeMultiplier;
             for (int i = 0; i < count; i++)
             {
-                Vector3 offset = Random.insideUnitSphere * chunkSpawnRadius;
+                Vector3 offset = Random.insideUnitSphere * radius;
                 offset.y = Mathf.Abs(offset.y) * 0.6f;
                 Vector3 position = center + offset;
-                Vector3 direction = (offset + Vector3.up * 0.8f).normalized;
+                Vector3 direction = (offset + Vector3.up * 0.8f * radius).normalized;
                 SpawnChunk(position, direction * Random.Range(burstSpeed * 0.5f, burstSpeed), Random.rotation);
             }
         }
@@ -123,7 +109,6 @@ public sealed class MineableRock : MonoBehaviour
         source.rolloffMode = AudioRolloffMode.Linear;
         source.PlayOneShot(breakClip, 1f);
         Destroy(soundObject, 1.5f);
-
         Destroy(gameObject);
     }
 
@@ -145,7 +130,6 @@ public sealed class MineableRock : MonoBehaviour
         Vector3 push = Vector3.ProjectOnPlane(direction, Vector3.up).normalized * 0.02f;
         float duration = 0.22f;
         float t = 0f;
-
         while (t < duration)
         {
             t += Time.deltaTime;

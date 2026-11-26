@@ -27,6 +27,8 @@ public static class AutoBuild
         "Assets/Models/Player/monke.glb"
     };
 
+    private const string MonsterModelPath = "Assets/Models/Monster/monster.glb";
+
     private static int currentStep;
 
     public static void BuildAndroid()
@@ -144,6 +146,25 @@ public static class AutoBuild
             Debug.Log(Tag + "Model OK: " + path + " (" + renderers + " renderers)");
         }
 
+        if (File.Exists(MonsterModelPath))
+        {
+            AssetDatabase.ImportAsset(MonsterModelPath, ImportAssetOptions.ForceUpdate);
+            GameObject monsterModel = AssetDatabase.LoadAssetAtPath<GameObject>(MonsterModelPath);
+            if (monsterModel == null || monsterModel.GetComponentsInChildren<Renderer>(true).Length == 0)
+            {
+                Debug.LogError(Tag + MonsterModelPath + " did not import as a model.");
+                ok = false;
+            }
+            else
+            {
+                Debug.Log(Tag + "Model OK: " + MonsterModelPath);
+            }
+        }
+        else
+        {
+            Debug.LogWarning(Tag + "No monster model at " + MonsterModelPath + ". The build continues without a monster.");
+        }
+
         return ok;
     }
 
@@ -161,6 +182,12 @@ public static class AutoBuild
         if (UnityEngine.Object.FindObjectsByType<MineableRock>(FindObjectsSortMode.None).Length == 0)
         {
             Debug.LogError(Tag + "No rocks were created from rock.glb.");
+            ok = false;
+        }
+
+        if (File.Exists(MonsterModelPath) && UnityEngine.Object.FindObjectsByType<Monster>(FindObjectsSortMode.None).Length != 1)
+        {
+            Debug.LogError(Tag + "The monster model exists but no monster was created in the scene.");
             ok = false;
         }
 
@@ -235,8 +262,8 @@ public static class AutoBuild
 
         if (defaultLight != null)
         {
-            defaultLight.intensity = 1.1f;
-            defaultLight.color = new Color(1f, 0.96f, 0.9f);
+            defaultLight.intensity = 0.55f;
+            defaultLight.color = new Color(0.85f, 0.95f, 1f);
             defaultLight.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
             Debug.Log(Tag + "Configured the default directional light.");
         }
@@ -301,6 +328,7 @@ public static class AutoBuild
         missing += ReportNullReferences<Shop>();
         missing += ReportNullReferences<ShopButton>();
         missing += ReportNullReferences<RockSpawnPoint>();
+        missing += ReportNullReferences<Monster>();
         missing += ReportNullReferences<MineableRock>();
 
         if (missing == 0)
@@ -513,6 +541,9 @@ public static class AutoBuild
         PlayerSettings.colorSpace = ColorSpace.Linear;
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { GraphicsDeviceType.Vulkan, GraphicsDeviceType.OpenGLES3 });
+        PlayerSettings.SplashScreen.show = false;
+        PlayerSettings.SplashScreen.showUnityLogo = false;
+        Debug.Log(Tag + "Splash screen turned off (Unity 6 and Plus/Pro licenses honor this; Unity 2022 Personal ignores it).");
         EditorUserBuildSettings.androidBuildSystem = AndroidBuildSystem.Gradle;
         EditorUserBuildSettings.buildAppBundle = false;
         EditorUserBuildSettings.development = false;

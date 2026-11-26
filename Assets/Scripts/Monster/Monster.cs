@@ -22,6 +22,7 @@ public sealed class Monster : MonoBehaviour
     [SerializeField] private float cooldownSeconds = 4f;
     [SerializeField] private float modelYawOffset;
     [SerializeField] private float bodyRadius = 0.4f;
+    [SerializeField] private float chaseAnimationSpeed = 1f;
 
     private State state;
     private Vector3 home;
@@ -30,6 +31,8 @@ public sealed class Monster : MonoBehaviour
     private float cooldownEnd;
     private Transform head;
     private Animation legacyAnimation;
+    private AnimationState chaseState;
+    private Animator animator;
     private AudioSource audioSource;
     private AudioClip growlClip;
     private float nextGrowlTime;
@@ -47,25 +50,91 @@ public sealed class Monster : MonoBehaviour
         home = transform.position;
         wanderTarget = home;
         state = State.Wander;
-
         Camera camera = Camera.main;
         head = camera != null ? camera.transform : null;
-
         audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.spatialBlend = 1f;
         audioSource.maxDistance = 30f;
         audioSource.rolloffMode = AudioRolloffMode.Linear;
         audioSource.playOnAwake = false;
         growlClip = PhysicsCompat.CreateThud(70f, 0.8f, 0.7f);
+        SetupAnimation();
+        ApplyChaseAnimation(false);
+    }
 
-        if (visual != null)
+    private void SetupAnimation()
+    {
+        if (visual == null)
         {
-            legacyAnimation = visual.GetComponentInChildren<Animation>();
-            if (legacyAnimation != null)
+            return;
+        }
+
+        legacyAnimation = visual.GetComponentInChildren<Animation>(true);
+        if (legacyAnimation != null)
+        {
+            legacyAnimation.playAutomatically = false;
+            legacyAnimation.cullingType = AnimationCullingType.AlwaysAnimate;
+            AnimationState chosen = null;
+            foreach (AnimationState animationState in legacyAnimation)
             {
-                PlayBestClip();
+                string lower = animationState.name.ToLowerInvariant();
+                if (chosen == null || lower.Contains("run") || lower.Contains("walk") || lower.Contains("chase"))
+                {
+                    chosen = animationState;
+                }
+            }
+
+            if (chosen != null)
+            {
+                chosen.wrapMode = WrapMode.Loop;
+                chosen.time = 0f;
+                chosen.speed = 0f;
+                legacyAnimation.Play(chosen.name);
+                chaseState = chosen;
+            }
+            return;
+        }
+
+        animator = visual.GetComponentInChildren<Animator>(true);
+        if (animator != null)
+        {
+            animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            if (animator.runtimeAnimatorController == null)
+            {
+                Debug.LogWarning("Monster has an Animator with no controller, so it cannot animate. Set glTFast's Animation Method to Legacy on monster.glb and reimport.", this);
+            }
+            return;
+        }
+
+        Debug.LogWarning("Monster found no Animation or Animator on its model. Set glTFast's Animation Method to Legacy on monster.glb and reimport.", this);
+    }
+
+    private void ApplyChaseAnimation(bool chasing)
+    {
+        float speed = chasing ? chaseAnimationSpeed : 0f;
+        if (chaseState != null)
+        {
+            chaseState.speed = speed;
+            if (!chasing)
+            {
+                chaseState.time = 0f;
             }
         }
+        else if (animator != null)
+        {
+            animator.speed = speed;
+        }
+    }
+
+    private void EnterState(State next)
+    {
+        if (state == next)
+        {
+            return;
+        }
+
+        state = next;
+        ApplyChaseAnimation(next == State.Chase);
     }
 
     private void Update()
@@ -83,38 +152,32 @@ public sealed class Monster : MonoBehaviour
         Vector3 toPlayer = head.position - transform.position;
         Vector3 flatToPlayer = Vector3.ProjectOnPlane(toPlayer, Vector3.up);
         float flatDistance = flatToPlayer.magnitude;
-
         switch (state)
         {
             case State.Wander:
                 UpdateWander(flatDistance);
                 if (flatDistance < detectRange && HasLineOfSight(toPlayer))
                 {
-                    state = State.Chase;
+                    EnterState(State.Chase);
                     Growl();
                 }
-
                 break;
-
             case State.Chase:
                 MoveToward(flatToPlayer, chaseSpeed);
                 if (flatDistance > loseRange)
                 {
-                    state = State.Wander;
+                    EnterState(State.Wander);
                 }
                 else if (flatDistance < catchDistance && Mathf.Abs(toPlayer.y) < 2.4f)
                 {
                     CatchPlayer();
                 }
-
                 break;
-
             case State.Cooldown:
                 if (Time.time >= cooldownEnd)
                 {
-                    state = State.Wander;
+                    EnterState(State.Wander);
                 }
-
                 break;
         }
 
@@ -154,7 +217,6 @@ public sealed class Monster : MonoBehaviour
 
         Vector3 direction = flatDirection.normalized;
         float step = speed * Time.deltaTime;
-
         if (!PathIsClear(direction, step))
         {
             Vector3 left = Quaternion.Euler(0f, -60f, 0f) * direction;
@@ -175,7 +237,6 @@ public sealed class Monster : MonoBehaviour
         }
 
         transform.position += direction * step;
-
         Quaternion targetRotation = Quaternion.LookRotation(direction, Vector3.up) * Quaternion.Euler(0f, modelYawOffset, 0f);
         transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, 1f - Mathf.Exp(-turnSpeed * Time.deltaTime));
     }
@@ -212,7 +273,7 @@ public sealed class Monster : MonoBehaviour
         }
 
         transform.position = home;
-        state = State.Cooldown;
+        EnterState(State.Cooldown);
         cooldownEnd = Time.time + cooldownSeconds;
     }
 
@@ -225,26 +286,5 @@ public sealed class Monster : MonoBehaviour
 
         nextGrowlTime = Time.time + 3f;
         audioSource.PlayOneShot(growlClip, 1f);
-    }
-
-    private void PlayBestClip()
-    {
-        AnimationClip chosen = null;
-        foreach (AnimationState animationState in legacyAnimation)
-        {
-            string lower = animationState.name.ToLowerInvariant();
-            if (chosen == null || lower.Contains("walk") || lower.Contains("run"))
-            {
-                chosen = animationState.clip;
-            }
-        }
-
-        if (chosen != null)
-        {
-            chosen.wrapMode = WrapMode.Loop;
-            legacyAnimation.clip = chosen;
-            legacyAnimation.wrapMode = WrapMode.Loop;
-            legacyAnimation.Play(chosen.name);
-        }
     }
 }

@@ -30,6 +30,8 @@ public sealed class MonkeAvatar : MonoBehaviour
     [SerializeField] private float bodyBackOffset = 0.08f;
     [SerializeField] private float yawFollowSpeed = 10f;
     [SerializeField] private bool hideHead = true;
+    [SerializeField] private bool hideBodyExceptArms = true;
+    [SerializeField] private float minElbowSideDistance = 0.1f;
     [SerializeField] private Vector3 restPalmDirection = Vector3.down;
     [SerializeField] private float leftHandRollDegrees;
     [SerializeField] private float rightHandRollDegrees;
@@ -101,9 +103,25 @@ public sealed class MonkeAvatar : MonoBehaviour
         headOffsetInModel = reference.position - modelRoot.position;
 
         SkinnedMeshRenderer[] skins = modelRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        SkinnedMeshRenderer armsMesh = null;
         for (int i = 0; i < skins.Length; i++)
         {
             skins[i].updateWhenOffscreen = true;
+            if (armsMesh == null || skins[i].sharedMesh.vertexCount > armsMesh.sharedMesh.vertexCount)
+            {
+                armsMesh = skins[i];
+            }
+        }
+
+        if (hideBodyExceptArms)
+        {
+            for (int i = 0; i < skins.Length; i++)
+            {
+                if (skins[i] != armsMesh)
+                {
+                    skins[i].enabled = false;
+                }
+            }
         }
 
         if (hideHead && head != null)
@@ -298,6 +316,17 @@ public sealed class MonkeAvatar : MonoBehaviour
         modelRoot.position = headTarget.position - rotation * headOffsetInModel - yawRotation * Vector3.forward * bodyBackOffset;
     }
 
+    private static Vector3 ComputeElbow(Vector3 shoulderPosition, Vector3 direction, float along, float across, Vector3 hint, Vector3 outward)
+    {
+        Vector3 hintAcross = Vector3.ProjectOnPlane(hint, direction);
+        if (hintAcross.sqrMagnitude < 0.0001f)
+        {
+            hintAcross = Vector3.ProjectOnPlane(outward, direction);
+        }
+
+        return shoulderPosition + direction * along + hintAcross.normalized * across;
+    }
+
     private void SolveArm(Arm arm)
     {
         if (arm == null || arm.target == null || arm.anchor == null)
@@ -333,15 +362,15 @@ public sealed class MonkeAvatar : MonoBehaviour
 
         Vector3 bodyRight = yawRotation * Vector3.right;
         Vector3 bodyForward = yawRotation * Vector3.forward;
-        Vector3 hint = Vector3.down + bodyRight * (arm.side * 0.4f) - bodyForward * 0.3f;
-        Vector3 hintAcross = Vector3.ProjectOnPlane(hint, direction);
-        if (hintAcross.sqrMagnitude < 0.0001f)
+        Vector3 outward = bodyRight * arm.side;
+        Vector3 bodyCenter = (leftArm.upper.position + rightArm.upper.position) * 0.5f;
+
+        Vector3 desiredElbow = ComputeElbow(shoulderPosition, direction, along, across, Vector3.down + outward * 0.6f - bodyForward * 0.3f, outward);
+        if (Vector3.Dot(desiredElbow - bodyCenter, outward) < minElbowSideDistance)
         {
-            hintAcross = Vector3.ProjectOnPlane(bodyRight * arm.side, direction);
+            desiredElbow = ComputeElbow(shoulderPosition, direction, along, across, outward + Vector3.down * 0.2f, outward);
         }
 
-        hintAcross.Normalize();
-        Vector3 desiredElbow = shoulderPosition + direction * along + hintAcross * across;
         Vector3 desiredWrist = shoulderPosition + direction * reach;
 
         arm.upper.rotation = Quaternion.FromToRotation(elbowPosition - shoulderPosition, desiredElbow - shoulderPosition) * arm.upper.rotation;

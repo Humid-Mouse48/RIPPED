@@ -1,4 +1,4 @@
-name: Build Quest APK
+name: Build RIPPED APK
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build VRGame.apk
+    name: Build RIPPED.apk
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -43,7 +43,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: VRGame-apk
-          path: build/Android/VRGame.apk
+          name: RIPPED-apk
+          path: build/Android/RIPPED.apk
           if-no-files-found: warn
           retention-days: 14

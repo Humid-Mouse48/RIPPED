@@ -9,12 +9,15 @@ public static class MiningEditorTools
     private const string RockModelPath = "Assets/Models/Mining/rock.glb";
     private const string CrystalModelPath = "Assets/Models/Mining/crystal.glb";
     private const string PickaxeModelPath = "Assets/Models/Mining/pickaxe.glb";
+    private const string MonsterModelPath = "Assets/Models/Monster/monster.glb";
+    private const float MonsterHeight = 2.2f;
     private const string PrefabFolder = "Assets/Prefabs/Mining";
     private const string ChunkPrefabPath = PrefabFolder + "/CrystalChunk.prefab";
     private const string RockPrefabPath = PrefabFolder + "/MiningRock.prefab";
-    private const float ChunkScale = 0.3f;
-    private const float DecorCrystalScale = 0.4f;
-    private const int DecorCrystalCount = 5;
+    private const float ChunkScale = 0.22f;
+    private const float DecorCrystalScale = 0.2f;
+    private const float RockScale = 0.4f;
+    private const int DecorCrystalCount = 4;
 
     [MenuItem("RIPPED/4 - Add Mining Rocks And Pickaxe To Open Scene")]
     public static void AddToOpenScene()
@@ -82,6 +85,64 @@ public static class MiningEditorTools
         }
 
         BuildShop(root.transform, pickaxePrefab);
+        BuildMonster(root.transform, new Vector3(3f, 0f, 18f));
+    }
+
+    private static void BuildMonster(Transform parent, Vector3 position)
+    {
+        GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(MonsterModelPath);
+        if (model == null)
+        {
+            Debug.LogWarning("No monster model at " + MonsterModelPath + ", so no monster was added. Add monster.glb there and build again.");
+            return;
+        }
+
+        ArmLocomotion[] players = Object.FindObjectsByType<ArmLocomotion>(FindObjectsSortMode.None);
+        LocomotionSettings settings = LocomotionEditorTools.PrepareSettings();
+
+        GameObject root = new GameObject("Monster");
+        root.transform.SetParent(parent, false);
+        root.transform.position = position;
+
+        GameObject visual = (GameObject)Object.Instantiate(model, root.transform);
+        visual.name = "Visual";
+        visual.transform.localPosition = Vector3.zero;
+        visual.transform.localRotation = Quaternion.identity;
+        visual.transform.localScale = Vector3.one;
+
+        Bounds bounds = WorldBounds(visual);
+        if (bounds.size.y > 0.0001f)
+        {
+            float scale = MonsterHeight / bounds.size.y;
+            visual.transform.localScale = Vector3.one * scale;
+            bounds = WorldBounds(visual);
+            visual.transform.position += new Vector3(position.x - bounds.center.x, position.y - bounds.min.y, position.z - bounds.center.z);
+        }
+
+        Monster monster = root.AddComponent<Monster>();
+        monster.Configure(players.Length > 0 ? players[0] : null, visual.transform, settings.solidMask, 0f);
+        EditorUtility.SetDirty(monster);
+    }
+
+    private static Bounds WorldBounds(GameObject target)
+    {
+        Renderer[] renderers = target.GetComponentsInChildren<Renderer>();
+        Bounds bounds = new Bounds(target.transform.position, Vector3.zero);
+        bool first = true;
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (first)
+            {
+                bounds = renderers[i].bounds;
+                first = false;
+            }
+            else
+            {
+                bounds.Encapsulate(renderers[i].bounds);
+            }
+        }
+
+        return bounds;
     }
 
     private static GameObject BuildPickaxePrefab()
@@ -104,19 +165,20 @@ public static class MiningEditorTools
         root.transform.position = new Vector3(0f, 0f, 3f);
         Transform shopRoot = root.transform;
 
-        Color wood = new Color(0.45f, 0.3f, 0.18f);
-        Color board = new Color(0.08f, 0.1f, 0.14f);
+        Color wood = new Color(0.5f, 0.36f, 0.22f);
+        Color board = new Color(0.62f, 0.64f, 0.66f);
 
         ShopBlock(shopRoot, "Counter", new Vector3(0f, 0.5f, -0.05f), new Vector3(2.4f, 1f, 0.5f), "ShopWood", wood, groundLayer);
         ShopBlock(shopRoot, "Screen", new Vector3(0f, 1.95f, 0.35f), new Vector3(2.6f, 1.6f, 0.1f), "ShopScreen", board, groundLayer);
 
-        Color gold = new Color(1f, 0.85f, 0.3f);
-        Color white = new Color(0.95f, 0.95f, 0.95f);
-        TextMesh title = TextFactory.Create(shopRoot, "Title", "RIPPED SHOP", new Vector3(0f, 2.5f, 0.25f), 0.02f, gold, TextAnchor.MiddleCenter);
+        Color gold = new Color(0.12f, 0.12f, 0.12f);
+        Color white = new Color(0.1f, 0.1f, 0.1f);
+        TextMesh title = TextFactory.Create(shopRoot, "Title", "SHOP", new Vector3(0f, 2.5f, 0.25f), 0.02f, gold, TextAnchor.MiddleCenter);
         TextMesh price = TextFactory.Create(shopRoot, "ItemPrice", "PICKAXE - 50 COINS", new Vector3(0f, 2.15f, 0.25f), 0.0125f, white, TextAnchor.MiddleCenter);
         TextMesh coins = TextFactory.Create(shopRoot, "Coins", "COINS: 0", new Vector3(0f, 1.85f, 0.25f), 0.0125f, gold, TextAnchor.MiddleCenter);
-        TextMesh status = TextFactory.Create(shopRoot, "Status", "TOUCH BUY TO GET A PICKAXE", new Vector3(0f, 1.55f, 0.25f), 0.009f, new Color(0.6f, 0.9f, 1f), TextAnchor.MiddleCenter);
+        TextMesh status = TextFactory.Create(shopRoot, "Status", "TOUCH BUY TO GET A PICKAXE", new Vector3(0f, 1.55f, 0.25f), 0.009f, new Color(0.1f, 0.25f, 0.45f), TextAnchor.MiddleCenter);
         title.gameObject.name = "Title";
+        ShopBlock(shopRoot, "SignPlate", new Vector3(0f, 2.5f, 0.31f), new Vector3(1.4f, 0.5f, 0.04f), "ShopSign", new Color(0.95f, 0.8f, 0.2f), groundLayer);
 
         GameObject spawn = new GameObject("PickaxeSpawn");
         spawn.transform.SetParent(shopRoot, false);
@@ -144,7 +206,7 @@ public static class MiningEditorTools
         ShopBlock(bin.transform, "BinWallRight", new Vector3(0.425f, 0.25f, 0f), new Vector3(0.05f, 0.5f, 0.9f), "ShopBin", binColor, groundLayer);
         ShopBlock(bin.transform, "BinWallBack", new Vector3(0f, 0.25f, 0.425f), new Vector3(0.9f, 0.5f, 0.05f), "ShopBin", binColor, groundLayer);
         ShopBlock(bin.transform, "BinWallFront", new Vector3(0f, 0.25f, -0.425f), new Vector3(0.9f, 0.5f, 0.05f), "ShopBin", binColor, groundLayer);
-        TextFactory.Create(bin.transform, "BinLabel", "SELL CRYSTALS\n+5 COINS EACH", new Vector3(0f, 1.0f, 0f), 0.0125f, gold, TextAnchor.MiddleCenter);
+        TextFactory.Create(bin.transform, "BinLabel", "SELL CRYSTALS\n+5 COINS EACH", new Vector3(0f, 1.0f, 0f), 0.0125f, new Color(1f, 0.9f, 0.3f), TextAnchor.MiddleCenter);
 
         SellBin sellBin = bin.AddComponent<SellBin>();
         SerializedObject binSerialized = new SerializedObject(sellBin);
@@ -234,7 +296,7 @@ public static class MiningEditorTools
         rockVisual.name = "RockVisual";
         rockVisual.transform.localPosition = Vector3.zero;
         rockVisual.transform.localRotation = Quaternion.identity;
-        rockVisual.transform.localScale = Vector3.one;
+        rockVisual.transform.localScale = Vector3.one * RockScale;
 
         MeshFilter[] filters = rockVisual.GetComponentsInChildren<MeshFilter>();
         for (int i = 0; i < filters.Length; i++)
@@ -261,10 +323,10 @@ public static class MiningEditorTools
                 Object.DestroyImmediate(stray[c]);
             }
 
-            Vector3 up = Vector3.Slerp(normals[i], Vector3.up, 0.45f).normalized;
+            Vector3 up = Vector3.Slerp(normals[i], Vector3.up, 0.25f).normalized;
             crystal.transform.localScale = Vector3.one * DecorCrystalScale * Random.Range(0.8f, 1.2f);
             crystal.transform.localRotation = Quaternion.FromToRotation(Vector3.up, up) * Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-            crystal.transform.localPosition = points[i] + up * (0.246f * crystal.transform.localScale.y - 0.02f);
+            crystal.transform.localPosition = points[i] + up * (0.246f * crystal.transform.localScale.y * 0.1f);
             decor.Add(crystal.transform);
         }
 
@@ -294,6 +356,25 @@ public static class MiningEditorTools
         List<Vector3> trianglePoints = new List<Vector3>();
         List<float> cumulative = new List<float>();
         float total = 0f;
+        float highest = 0f;
+
+        for (int f = 0; f < filters.Length; f++)
+        {
+            Mesh heightMesh = filters[f].sharedMesh;
+            if (heightMesh == null)
+            {
+                continue;
+            }
+
+            Matrix4x4 heightToRoot = root.worldToLocalMatrix * filters[f].transform.localToWorldMatrix;
+            Vector3[] heightVertices = heightMesh.vertices;
+            for (int i = 0; i < heightVertices.Length; i++)
+            {
+                highest = Mathf.Max(highest, heightToRoot.MultiplyPoint3x4(heightVertices[i]).y);
+            }
+        }
+
+        float minHeight = highest * 0.45f;
 
         for (int f = 0; f < filters.Length; f++)
         {
@@ -316,7 +397,7 @@ public static class MiningEditorTools
                 float area = cross.magnitude * 0.5f;
                 Vector3 normal = cross.normalized;
 
-                if (area <= 0.00001f || normal.y < 0.45f || (a.y + b.y + c.y) / 3f < 0.2f)
+                if (area <= 0.00001f || normal.y < 0.45f || (a.y + b.y + c.y) / 3f < minHeight)
                 {
                     continue;
                 }

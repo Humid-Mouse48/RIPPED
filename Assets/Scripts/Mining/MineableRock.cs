@@ -10,7 +10,7 @@ public sealed class MineableRock : MonoBehaviour
     [SerializeField] private int minChunks = 8;
     [SerializeField] private int maxChunks = 12;
     [SerializeField] private float burstSpeed = 2.2f;
-    [SerializeField] private float chunkSpawnRadius = 0.35f;
+    [SerializeField] private float chunkSpawnRadius = 0.2f;
     [SerializeField] private float hitCooldownSeconds = 0.25f;
     [SerializeField, Range(0f, 1f)] private float chunkScaleVariance = 0.25f;
 
@@ -103,7 +103,7 @@ public sealed class MineableRock : MonoBehaviour
         if (chunkPrefab != null)
         {
             int count = Random.Range(minChunks, maxChunks + 1);
-            Vector3 center = transform.position + Vector3.up * 0.25f;
+            Vector3 center = transform.position + Vector3.up * 0.15f;
 
             for (int i = 0; i < count; i++)
             {

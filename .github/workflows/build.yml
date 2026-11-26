@@ -1,4 +1,4 @@
-name: Build RIPPED APK
+name: Build Quest APK
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build RIPPED.apk
+    name: Build Quest APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

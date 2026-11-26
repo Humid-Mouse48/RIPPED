@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.XR;
 
 [RequireComponent(typeof(Rigidbody))]
 public class Grabbable : MonoBehaviour
@@ -6,6 +7,10 @@ public class Grabbable : MonoBehaviour
     [SerializeField] private bool snapToHand;
     [SerializeField] private Vector3 heldLocalPosition;
     [SerializeField] private Vector3 heldLocalEuler;
+    [Header("Grip tuning (added on top of the held pose, in hand space)")]
+    [SerializeField] private Vector3 gripPositionOffset;
+    [SerializeField] private Vector3 gripEulerOffset;
+    [SerializeField] private bool mirrorOffsetForLeftHand = true;
     [SerializeField] private float throwMultiplier = 1f;
     [SerializeField] private float maxThrowSpeed = 12f;
 
@@ -34,11 +39,20 @@ public class Grabbable : MonoBehaviour
         body.isKinematic = true;
         body.useGravity = false;
         transform.SetParent(hand.HandTransform, true);
-
         if (snapToHand)
         {
-            transform.localPosition = heldLocalPosition;
-            transform.localRotation = Quaternion.Euler(heldLocalEuler);
+            Vector3 positionOffset = gripPositionOffset;
+            Vector3 eulerOffset = gripEulerOffset;
+            if (mirrorOffsetForLeftHand && hand.Node == XRNode.LeftHand)
+            {
+                positionOffset.x = -positionOffset.x;
+                eulerOffset.y = -eulerOffset.y;
+                eulerOffset.z = -eulerOffset.z;
+            }
+
+            Quaternion offset = Quaternion.Euler(eulerOffset);
+            transform.localRotation = offset * Quaternion.Euler(heldLocalEuler);
+            transform.localPosition = offset * heldLocalPosition + positionOffset;
         }
 
         OnGrabbed(hand);

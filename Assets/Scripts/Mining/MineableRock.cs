@@ -15,6 +15,8 @@ public sealed class MineableRock : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float chunkScaleVariance = 0.25f;
     [Tooltip("Multiplies the rock's size at runtime. Lower this to make rocks smaller.")]
     [SerializeField, Range(0.05f, 2f)] private float sizeMultiplier = 0.4f;
+    [Tooltip("Multiplies the size of every crystal chunk when it spawns. Lower this to make chunks smaller.")]
+    [SerializeField, Range(0.05f, 2f)] private float chunkSizeMultiplier = 0.3f;
 
     private int hits;
     private float nextHitTime;
@@ -115,7 +117,7 @@ public sealed class MineableRock : MonoBehaviour
     private void SpawnChunk(Vector3 position, Vector3 velocity, Quaternion rotation)
     {
         GameObject chunk = Instantiate(chunkPrefab, position, rotation);
-        float scale = 1f + Random.Range(-chunkScaleVariance, chunkScaleVariance);
+        float scale = (1f + Random.Range(-chunkScaleVariance, chunkScaleVariance)) * chunkSizeMultiplier;
         chunk.transform.localScale *= scale;
         Rigidbody body = chunk.GetComponent<Rigidbody>();
         if (body != null)

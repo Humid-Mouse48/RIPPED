@@ -38,16 +38,22 @@ public sealed class MonkeAvatar : MonoBehaviour
     [SerializeField] private bool autoDetectPalm = true;
     [SerializeField] private bool flipLeftCurl;
     [SerializeField] private bool flipRightCurl;
+    [Tooltip("Spins the finger curl plane around the fingers. Try 90 or -90 if the fingers still curl sideways.")]
+    [SerializeField] private float curlRollDegrees;
     [SerializeField] private float leftHandRollDegrees;
     [SerializeField] private float rightHandRollDegrees;
 
     private readonly List<Transform> allBones = new List<Transform>();
     private readonly List<Mesh> createdMeshes = new List<Mesh>();
+    private readonly List<Material> colorMaterials = new List<Material>();
     private Arm leftArm;
     private Arm rightArm;
     private Quaternion alignment = Quaternion.identity;
     private Quaternion yawRotation = Quaternion.identity;
     private Vector3 headOffsetInModel;
+    private Color tint = Color.white;
+    private bool hasTint;
+    private bool colorsReady;
     private bool ready;
 
     public bool IsLocalPlayer => isLocalPlayer;
@@ -68,8 +74,63 @@ public sealed class MonkeAvatar : MonoBehaviour
         isLocalPlayer = local;
     }
 
+    // Tints the whole monke. Safe to call before Start.
+    public void ApplyColor(Color color)
+    {
+        tint = color;
+        hasTint = true;
+        if (colorsReady)
+        {
+            ApplyTint();
+        }
+    }
+
+    private void OnProfileChanged()
+    {
+        if (isLocalPlayer)
+        {
+            ApplyColor(MonkeProfile.CurrentColor);
+        }
+    }
+
+    private void ApplyTint()
+    {
+        for (int i = 0; i < colorMaterials.Count; i++)
+        {
+            Material material = colorMaterials[i];
+            if (material == null)
+            {
+                continue;
+            }
+
+            if (material.HasProperty("_BaseColor"))
+            {
+                material.SetColor("_BaseColor", tint);
+            }
+
+            if (material.HasProperty("baseColorFactor"))
+            {
+                material.SetColor("baseColorFactor", tint);
+            }
+
+            if (material.HasProperty("_Color"))
+            {
+                material.SetColor("_Color", tint);
+            }
+        }
+    }
+
     private void OnDestroy()
     {
+        MonkeProfile.Changed -= OnProfileChanged;
+        for (int i = 0; i < colorMaterials.Count; i++)
+        {
+            if (colorMaterials[i] != null)
+            {
+                Destroy(colorMaterials[i]);
+            }
+        }
+
         for (int i = 0; i < createdMeshes.Count; i++)
         {
             if (createdMeshes[i] != null)
@@ -130,7 +191,26 @@ public sealed class MonkeAvatar : MonoBehaviour
 
         if (isLocalPlayer && hideBodyForLocalPlayer)
         {
-            HideBodyExceptArms(skins, new[] { shoulderL, shoulderR, upperL, upperR });
+            HideBodyExceptArms(skins, shoulderL, shoulderR, upperL, upperR);
+        }
+
+        Renderer[] renderers = modelRoot.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            colorMaterials.AddRange(renderers[i].materials);
+        }
+
+        colorsReady = true;
+        if (isLocalPlayer)
+        {
+            tint = MonkeProfile.CurrentColor;
+            hasTint = true;
+            MonkeProfile.Changed += OnProfileChanged;
+        }
+
+        if (hasTint)
+        {
+            ApplyTint();
         }
 
         Vector3 flatForward = Vector3.ProjectOnPlane(headTarget.forward, Vector3.up);
@@ -138,20 +218,17 @@ public sealed class MonkeAvatar : MonoBehaviour
         ready = true;
     }
 
-    // Removes every triangle that is not mostly skinned to an arm bone, only for this client's own avatar.
-    // The original mesh asset is untouched, so remote copies of the avatar still show the whole body and head.
-    private void HideBodyExceptArms(SkinnedMeshRenderer[] skins, Transform[] armRoots)
+    // Hides the head and body from the player who owns this avatar, keeping the arms and hands.
+    // Other players' copies of the avatar are never touched, so they still see a full monke.
+    private void HideBodyExceptArms(SkinnedMeshRenderer[] skins, Transform shoulderL, Transform shoulderR, Transform upperL, Transform upperR)
     {
         HashSet<Transform> armBones = new HashSet<Transform>();
-        for (int i = 0; i < armRoots.Length; i++)
-        {
-            Transform[] subtree = armRoots[i].GetComponentsInChildren<Transform>(true);
-            for (int j = 0; j < subtree.Length; j++)
-            {
-                armBones.Add(subtree[j]);
-            }
-        }
+        AddSubtree(armBones, shoulderL);
+        AddSubtree(armBones, shoulderR);
+        AddSubtree(armBones, upperL);
+        AddSubtree(armBones, upperR);
 
+        List<SkinnedMeshRenderer> unreadable = new List<SkinnedMeshRenderer>();
         for (int i = 0; i < skins.Length; i++)
         {
             SkinnedMeshRenderer skin = skins[i];
@@ -163,7 +240,7 @@ public sealed class MonkeAvatar : MonoBehaviour
 
             if (!source.isReadable)
             {
-                Debug.LogWarning("Cannot hide the body on '" + skin.name + "' because its mesh is not readable. Turn on Read/Write for the player model so the head and body can be hidden from yourself.", skin);
+                unreadable.Add(skin);
                 continue;
             }
 
@@ -175,14 +252,82 @@ public sealed class MonkeAvatar : MonoBehaviour
                 {
                     Destroy(filtered);
                 }
+
                 continue;
             }
 
             createdMeshes.Add(filtered);
             skin.sharedMesh = filtered;
         }
+
+        if (unreadable.Count > 0)
+        {
+            CollapseBodyBones(unreadable, shoulderL, shoulderR, upperL, upperR, armBones);
+        }
+
+        // Rigid parts (meshes parented to bones rather than skinned) that are not part of an arm.
+        MeshRenderer[] rigid = modelRoot.GetComponentsInChildren<MeshRenderer>(true);
+        for (int i = 0; i < rigid.Length; i++)
+        {
+            if (!IsArmPart(rigid[i].transform, armBones))
+            {
+                rigid[i].enabled = false;
+            }
+        }
     }
 
+    // Used when a mesh cannot be read: lift the arms out of the body's bone hierarchy, then shrink every other
+    // bone to almost nothing so whatever is skinned to the body collapses to a point.
+    private void CollapseBodyBones(List<SkinnedMeshRenderer> skins, Transform shoulderL, Transform shoulderR, Transform upperL, Transform upperR, HashSet<Transform> armBones)
+    {
+        if (!upperL.IsChildOf(shoulderL) || !upperR.IsChildOf(shoulderR))
+        {
+            Debug.LogWarning("Cannot hide the body: the upper arm bones are not children of the shoulder bones. Turn on Read/Write for the player model.", this);
+            return;
+        }
+
+        shoulderL.SetParent(modelRoot, true);
+        shoulderR.SetParent(modelRoot, true);
+        for (int i = 0; i < skins.Count; i++)
+        {
+            Transform[] bones = skins[i].bones;
+            for (int j = 0; j < bones.Length; j++)
+            {
+                Transform bone = bones[j];
+                if (bone != null && bone != modelRoot && !armBones.Contains(bone))
+                {
+                    bone.localScale = Vector3.one * 0.0001f;
+                }
+            }
+        }
+    }
+
+    private static void AddSubtree(HashSet<Transform> set, Transform root)
+    {
+        Transform[] subtree = root.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < subtree.Length; i++)
+        {
+            set.Add(subtree[i]);
+        }
+    }
+
+    private bool IsArmPart(Transform part, HashSet<Transform> armBones)
+    {
+        Transform current = part;
+        while (current != null && current != modelRoot)
+        {
+            if (armBones.Contains(current))
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    // Keeps only triangles whose three vertices are mostly skinned to an arm bone.
     private static Mesh BuildArmOnlyMesh(SkinnedMeshRenderer skin, Mesh source, HashSet<Transform> armBones, out int keptTriangles)
     {
         keptTriangles = 0;
@@ -204,11 +349,13 @@ public sealed class MonkeAvatar : MonoBehaviour
                 best = w.weight1;
                 dominant = w.boneIndex1;
             }
+
             if (w.weight2 > best)
             {
                 best = w.weight2;
                 dominant = w.boneIndex2;
             }
+
             if (w.weight3 > best)
             {
                 dominant = w.boneIndex3;
@@ -256,7 +403,7 @@ public sealed class MonkeAvatar : MonoBehaviour
             lowerRest = lower.localRotation
         };
         Vector3 palmHint = restPalmDirection.sqrMagnitude > 0.0001f ? restPalmDirection.normalized : Vector3.down;
-        FingerChain[] chains = BuildFingerChains(hand, side, palmHint, autoDetectPalm, flipCurl, out Vector3 fingerDirection, out float meanBaseDistance, out Vector3 palm);
+        FingerChain[] chains = BuildFingerChains(hand, side, palmHint, autoDetectPalm, flipCurl, curlRollDegrees, out Vector3 fingerDirection, out float meanBaseDistance, out Vector3 palm);
         arm.palmOffset = meanBaseDistance * 0.6f;
         Vector3 palmFlat = Vector3.ProjectOnPlane(palm, fingerDirection);
         if (palmFlat.sqrMagnitude < 0.0001f)
@@ -277,7 +424,7 @@ public sealed class MonkeAvatar : MonoBehaviour
         return arm;
     }
 
-    private static FingerChain[] BuildFingerChains(Transform hand, float side, Vector3 palmHint, bool autoDetect, bool flip, out Vector3 averageDirection, out float meanBaseDistance, out Vector3 palm)
+    private static FingerChain[] BuildFingerChains(Transform hand, float side, Vector3 palmHint, bool autoDetect, bool flip, float rollDegrees, out Vector3 averageDirection, out float meanBaseDistance, out Vector3 palm)
     {
         palm = palmHint;
         List<List<Transform>> chains = new List<List<Transform>>();
@@ -348,7 +495,7 @@ public sealed class MonkeAvatar : MonoBehaviour
             Vector3 thumbBase = chains[thumb][0].position;
             order.Sort((a, b) => Vector3.Distance(chains[a][0].position, thumbBase).CompareTo(Vector3.Distance(chains[b][0].position, thumbBase)));
 
-            // Work out which way the palm faces from the thumb position, so the fingers curl toward the palm
+            // Work out which way the palm faces from where the thumb sits, so the fingers curl toward the palm
             // whatever pose the model was exported in. Right hand: palm = fingers x toward-thumb. Left hand is the mirror.
             Vector3 fingerSum = Vector3.zero;
             Vector3 baseSum = Vector3.zero;
@@ -386,14 +533,25 @@ public sealed class MonkeAvatar : MonoBehaviour
                 worldAxis = -worldAxis;
             }
 
-            Vector3 localAxis = worldAxis.sqrMagnitude > 0.0001f
-                ? Quaternion.Inverse(chains[i][0].rotation) * worldAxis.normalized
-                : Vector3.right;
+            if (Mathf.Abs(rollDegrees) > 0.01f && worldAxis.sqrMagnitude > 0.0001f)
+            {
+                worldAxis = Quaternion.AngleAxis(rollDegrees, directions[i]) * worldAxis;
+            }
+
+            Vector3 axisInWorld = worldAxis.sqrMagnitude > 0.0001f ? worldAxis.normalized : Vector3.right;
+            // Every joint gets the same world axis, written in its own local space.
+            Vector3[] jointAxes = new Vector3[chains[i].Count];
+            for (int j = 0; j < jointAxes.Length; j++)
+            {
+                jointAxes[j] = Quaternion.Inverse(chains[i][j].rotation) * axisInWorld;
+            }
+
             FingerChain chain = new FingerChain();
             chain.label = chains[i][0].name;
             chain.input = isThumb ? FingerInput.Thumb : (rank == 0 ? FingerInput.Trigger : FingerInput.Grip);
             chain.bones = chains[i].ToArray();
-            chain.curlAxis = localAxis;
+            chain.curlAxis = jointAxes[0];
+            chain.jointAxes = jointAxes;
             chain.maxAngleDegrees = isThumb ? 55f : 85f;
             chain.jointFalloff = 1f;
             result[i] = chain;

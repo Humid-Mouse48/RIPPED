@@ -1,418 +1,457 @@
-using System.Collections.Generic;
-using System.Linq;
-using Unity.AI.Navigation;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.Rendering;
 
-// RIPPED > Build Map builds a real level into the open scene:
-// canyon floor, cliff ring, mesas to climb, a raised plaza, 3 mining zones, lamps, signs,
-// the computer, lighting + fog, and a NavMesh for the monster.
-// Your existing Shop / SellBin / RockSpawnPoint / Monster objects are moved into place (not recreated),
-// and the old test course root objects are switched off (not deleted).
 public static class RippedMapBuilder
 {
-    const string RootName = "RIPPED_Map";
-    const string MatDir = "Assets/Materials/Generated";
+    private const string RootName = "RIPPED_Map";
+    private const string OldCourseName = "MovementTestArea";
+    private const string MaterialFolder = "Assets/Materials/RippedMap";
+    private const int TargetRockCount = 18;
 
-    static Transform root;
-    static System.Random rng;
+    private static readonly Vector3 SpawnPosition = new Vector3(0f, 1.02f, -4f);
+    private static readonly Vector3 ShopPosition = new Vector3(-4f, 1f, 6f);
+    private static readonly Vector3 ComputerPosition = new Vector3(5.5f, 1f, 6f);
 
-    [MenuItem("RIPPED/Build Map")]
+    private static Transform root;
+    private static int groundLayer;
+    private static System.Random random;
+
+    [MenuItem("RIPPED/6 - Build Map In Open Scene")]
     public static void BuildFromMenu()
     {
         Build();
-        EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
-    }
-
-    // Used by AutoBuild: builds the map into the scene once, then saves it.
-    public static void EnsureMapInScene(string scenePath)
-    {
-        var scene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
-        if (GameObject.Find(RootName) != null) return;
-        Build();
-        EditorSceneManager.SaveScene(scene);
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
     }
 
     public static void Build()
     {
-        rng = new System.Random(1337);
-        var scene = SceneManager.GetActiveScene();
+        random = new System.Random(1337);
 
-        foreach (var go in scene.GetRootGameObjects())
-            if (go.name == RootName) Object.DestroyImmediate(go);
-
-        // ---- gather existing gameplay objects ----
-        var shops = FindByType("Shop");
-        var bins = FindByType("SellBin");
-        var rocks = FindByType("RockSpawnPoint");
-        var monsters = FindByType("Monster");
-        var tracked = new List<Transform>();
-        tracked.AddRange(shops); tracked.AddRange(bins); tracked.AddRange(rocks); tracked.AddRange(monsters);
-
-        foreach (var t in tracked)
-            if (t.parent != null && IsOldCourse(t.root.gameObject)) t.SetParent(null, true);
-
-        foreach (var go in scene.GetRootGameObjects())
+        GameObject existing = GameObject.Find(RootName);
+        if (existing != null)
         {
-            if (!tracked.Contains(go.transform) && IsOldCourse(go))
-            {
-                go.SetActive(false);
-                Debug.Log("[MapBuilder] Disabled old course object: " + go.name);
-            }
+            Object.DestroyImmediate(existing);
         }
 
-        var rootGo = new GameObject(RootName);
-        root = rootGo.transform;
+        groundLayer = LayerMask.NameToLayer("Ground");
+        if (groundLayer < 0)
+        {
+            Debug.LogWarning("[RippedMap] Layer 'Ground' not found, using Default. Run RIPPED > 1 - Setup Layers And Settings first.");
+            groundLayer = 0;
+        }
 
-        // ---- materials (flat, saturated, Gorilla-Tag-ish) ----
-        var sand = Mat("RM_Sand", C("#d9b77a"));
-        var padMats = new[] { Mat("RM_PadA", C("#b98b52")), Mat("RM_PadB", C("#9a7a8a")), Mat("RM_PadC", C("#7a9a80")) };
-        var cliffA = Mat("RM_CliffA", C("#8a5a44"));
-        var cliffB = Mat("RM_CliffB", C("#6f4a3d"));
-        var band = Mat("RM_Band", C("#d98c4a"));
-        var plazaM = Mat("RM_Plaza", C("#3f4a66"));
-        var stepM = Mat("RM_Step", C("#566086"));
-        var trim = Mat("RM_Trim", C("#ffb02e"), 0.6f);
-        var post = Mat("RM_Post", C("#2b2f3a"));
-        var lamp = Mat("RM_Lamp", C("#ffd37a"), 2.0f);
-        var board = Mat("RM_Board", C("#1d2335"));
-        var mesaMats = new[] { Mat("RM_MesaA", C("#c86b4a")), Mat("RM_MesaB", C("#a9565a")), Mat("RM_MesaC", C("#d08a53")) };
-        var boulder = Mat("RM_Boulder", C("#9b6b50"));
-        var deskM = Mat("RM_Desk", C("#7a4a2e"));
-        var deskTop = Mat("RM_DeskTop", C("#e8d9b5"));
-        var kbM = Mat("RM_Keyboard", C("#2b2f3a"));
+        GameObject oldCourse = GameObject.Find(OldCourseName);
+        if (oldCourse != null)
+        {
+            oldCourse.SetActive(false);
+        }
 
-        // ---- ground ----
-        Box("Floor", root, new Vector3(0, -0.5f, 0), new Vector3(120, 1, 120), sand);
+        GameObject rootObject = new GameObject(RootName);
+        root = rootObject.transform;
 
-        var zoneCenters = new Vector3[3];
+        Material sand = Mat("Sand", "#d9b77a", 0f);
+        Material[] pads = { Mat("PadA", "#b98b52", 0f), Mat("PadB", "#9a7a8a", 0f), Mat("PadC", "#7a9a80", 0f) };
+        Material cliffA = Mat("CliffA", "#8a5a44", 0f);
+        Material cliffB = Mat("CliffB", "#6f4a3d", 0f);
+        Material band = Mat("Band", "#d98c4a", 0f);
+        Material plaza = Mat("Plaza", "#3f4a66", 0f);
+        Material step = Mat("Step", "#566086", 0f);
+        Material trim = Mat("Trim", "#ffb02e", 0.6f);
+        Material post = Mat("Post", "#2b2f3a", 0f);
+        Material lamp = Mat("Lamp", "#ffd37a", 2f);
+        Material backdrop = Mat("Backdrop", "#2b3350", 0f);
+        Material[] mesaMats = { Mat("MesaA", "#c86b4a", 0f), Mat("MesaB", "#a9565a", 0f), Mat("MesaC", "#d08a53", 0f) };
+        Material boulder = Mat("Boulder", "#9b6b50", 0f);
+        Material deskWood = Mat("DeskWood", "#7a4a2e", 0f);
+        Material deskTop = Mat("DeskTop", "#e8d9b5", 0f);
+        Material keyboard = Mat("Keyboard", "#2b2f3a", 0f);
+
+        Box("Floor", root, new Vector3(0f, -0.5f, 0f), new Vector3(120f, 1f, 120f), 0f, sand, true);
+
+        Vector3[] zoneCenters = new Vector3[3];
         for (int z = 0; z < 3; z++)
         {
-            float ang = (30f + 120f * z) * Mathf.Deg2Rad;
-            zoneCenters[z] = new Vector3(Mathf.Cos(ang) * 28f, 0, Mathf.Sin(ang) * 28f);
-            Box("ZonePad" + z, root, zoneCenters[z] + Vector3.up * 0.03f, new Vector3(20, 0.06f, 20), padMats[z], false, 20f * z);
+            float angle = (30f + 120f * z) * Mathf.Deg2Rad;
+            zoneCenters[z] = new Vector3(Mathf.Cos(angle) * 28f, 0f, Mathf.Sin(angle) * 28f);
+            Box("ZonePad " + z, root, zoneCenters[z] + Vector3.up * 0.03f, new Vector3(20f, 0.06f, 20f), 20f * z, pads[z], false);
         }
 
-        // ---- plaza (shop / sell / computer) ----
-        Box("Plaza", root, new Vector3(0, 0.5f, 0), new Vector3(20, 1, 20), plazaM);
-        Box("TrimN", root, new Vector3(0, 1.04f, 9.85f), new Vector3(20, 0.08f, 0.3f), trim, false);
-        Box("TrimS", root, new Vector3(0, 1.04f, -9.85f), new Vector3(20, 0.08f, 0.3f), trim, false);
-        Box("TrimE", root, new Vector3(9.85f, 1.04f, 0), new Vector3(0.3f, 0.08f, 20), trim, false);
-        Box("TrimW", root, new Vector3(-9.85f, 1.04f, 0), new Vector3(0.3f, 0.08f, 20), trim, false);
+        Box("Plaza", root, new Vector3(0f, 0.5f, 0f), new Vector3(20f, 1f, 20f), 0f, plaza, true);
+        Box("Trim North", root, new Vector3(0f, 1.04f, 9.85f), new Vector3(20f, 0.08f, 0.3f), 0f, trim, false);
+        Box("Trim South", root, new Vector3(0f, 1.04f, -9.85f), new Vector3(20f, 0.08f, 0.3f), 0f, trim, false);
+        Box("Trim East", root, new Vector3(9.85f, 1.04f, 0f), new Vector3(0.3f, 0.08f, 20f), 0f, trim, false);
+        Box("Trim West", root, new Vector3(-9.85f, 1.04f, 0f), new Vector3(0.3f, 0.08f, 20f), 0f, trim, false);
 
         for (int i = 0; i < 3; i++)
         {
-            float h = (i + 1) * 0.33f;
-            Box("Step" + i, root, new Vector3(0, h / 2f, -10.5f - (2 - i) * 1f), new Vector3(8, h, 1), stepM);
+            float height = (i + 1) * 0.33f;
+            Box("Step " + i, root, new Vector3(0f, height / 2f, -10.5f - (2 - i)), new Vector3(8f, height, 1f), 0f, step, true);
         }
 
-        float[] lx = { -9f, 9f, -9f, 9f };
-        float[] lz = { -9f, -9f, 9f, 9f };
+        float[] lampX = { -9f, 9f, -9f, 9f };
+        float[] lampZ = { -9f, -9f, 9f, 9f };
         for (int i = 0; i < 4; i++)
         {
-            Box("LampPost" + i, root, new Vector3(lx[i], 2.5f, lz[i]), new Vector3(0.2f, 3f, 0.2f), post);
-            Box("LampHead" + i, root, new Vector3(lx[i], 4.15f, lz[i]), new Vector3(0.5f, 0.5f, 0.5f), lamp, false);
+            Box("Lamp Post " + i, root, new Vector3(lampX[i], 2.5f, lampZ[i]), new Vector3(0.2f, 3f, 0.2f), 0f, post, true);
+            Box("Lamp Head " + i, root, new Vector3(lampX[i], 4.15f, lampZ[i]), new Vector3(0.5f, 0.5f, 0.5f), 0f, lamp, false);
         }
 
-        // ---- cliff ring ----
-        int n = 36;
-        float R = 46f;
-        for (int i = 0; i < n; i++)
+        int segments = 36;
+        float ringRadius = 46f;
+        for (int i = 0; i < segments; i++)
         {
-            float a = i * 360f / n;
-            Vector3 dir = new Vector3(Mathf.Cos(a * Mathf.Deg2Rad), 0, Mathf.Sin(a * Mathf.Deg2Rad));
-            float h = Rand(14f, 24f);
-            float yaw = -(a + 90f);
-            Vector3 p = dir * R;
-            Box("Cliff" + i, root, p + Vector3.up * (h / 2f), new Vector3(9.2f, h, 6f), i % 2 == 0 ? cliffA : cliffB, true, yaw);
-            Box("CliffBand" + i, root, p - dir * 3.02f + Vector3.up * (h * 0.45f), new Vector3(9.3f, 0.7f, 0.12f), band, false, yaw);
+            float angle = i * 360f / segments;
+            Vector3 direction = new Vector3(Mathf.Cos(angle * Mathf.Deg2Rad), 0f, Mathf.Sin(angle * Mathf.Deg2Rad));
+            float height = Rand(14f, 24f);
+            float yaw = -(angle + 90f);
+            Vector3 position = direction * ringRadius;
+            Box("Cliff " + i, root, position + Vector3.up * (height / 2f), new Vector3(9.2f, height, 6f), yaw, i % 2 == 0 ? cliffA : cliffB, true);
+            Box("Cliff Band " + i, root, position - direction * 3.02f + Vector3.up * (height * 0.45f), new Vector3(9.3f, 0.7f, 0.12f), yaw, band, false);
         }
 
-        // ---- mesas (climb with your arms) ----
         float[,] mesas =
         {
-            { 90, 21, 9, 5.5f }, { 210, 21, 8, 4.5f }, { 330, 21, 9, 6f },
-            { 90, 33, 7, 3.2f }, { 210, 33, 7, 3.8f }, { 330, 33, 8, 3f }
+            { 90f, 21f, 9f, 5.5f },
+            { 210f, 21f, 8f, 4.5f },
+            { 330f, 21f, 9f, 6f },
+            { 90f, 33f, 7f, 3.2f },
+            { 210f, 33f, 7f, 3.8f },
+            { 330f, 33f, 8f, 3f }
         };
+        Vector3[] mesaCenters = new Vector3[mesas.GetLength(0)];
         for (int i = 0; i < mesas.GetLength(0); i++)
         {
-            float a = mesas[i, 0] * Mathf.Deg2Rad;
-            float r = mesas[i, 1], w = mesas[i, 2], h = mesas[i, 3];
-            Box("Mesa" + i, root, new Vector3(Mathf.Cos(a) * r, h / 2f, Mathf.Sin(a) * r), new Vector3(w, h, w * 0.8f), mesaMats[i % 3], true, Rand(0f, 90f));
+            float angle = mesas[i, 0] * Mathf.Deg2Rad;
+            float radius = mesas[i, 1];
+            float width = mesas[i, 2];
+            float height = mesas[i, 3];
+            mesaCenters[i] = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+            Box("Mesa " + i, root, mesaCenters[i] + Vector3.up * (height / 2f), new Vector3(width, height, width * 0.8f), Rand(0f, 90f), mesaMats[i % 3], true);
         }
 
-        // ---- boulders (decor, kept clear of the mining zones) ----
-        int placed = 0, tries = 0;
-        while (placed < 24 && tries < 400)
+        int placed = 0;
+        int tries = 0;
+        while (placed < 24 && tries < 500)
         {
             tries++;
-            float a = Rand(0f, 360f) * Mathf.Deg2Rad;
-            float r = Rand(13f, 40f);
-            Vector3 p = new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r);
-            bool near = false;
-            foreach (var zc in zoneCenters) if ((zc - p).magnitude < 13f) near = true;
-            foreach (var m in mesas.Cast<float>().Take(0)) { }
-            if (near) continue;
-            float s = Rand(1f, 2.5f);
-            Box("Boulder" + placed, root, p + Vector3.up * (s * 0.4f), new Vector3(s * 1.3f, s * 0.8f, s), boulder, true, Rand(0f, 360f));
+            float angle = Rand(0f, 360f) * Mathf.Deg2Rad;
+            float radius = Rand(13f, 40f);
+            Vector3 position = new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+            if (NearAny(position, zoneCenters, 13f) || NearAny(position, mesaCenters, 9f))
+            {
+                continue;
+            }
+
+            float size = Rand(1f, 2.5f);
+            Box("Boulder " + placed, root, position + Vector3.up * (size * 0.4f), new Vector3(size * 1.3f, size * 0.8f, size), Rand(0f, 360f), boulder, true);
             placed++;
         }
 
-        // ---- invisible ceiling so nobody climbs out ----
-        var ceil = new GameObject("WorldCeiling");
-        ceil.transform.SetParent(root, false);
-        ceil.transform.position = new Vector3(0, 34f, 0);
-        var bc = ceil.AddComponent<BoxCollider>();
-        bc.size = new Vector3(130, 1, 130);
+        GameObject ceiling = new GameObject("World Ceiling");
+        ceiling.transform.SetParent(root, false);
+        ceiling.transform.position = new Vector3(0f, 34f, 0f);
+        ceiling.layer = groundLayer;
+        ceiling.AddComponent<BoxCollider>().size = new Vector3(130f, 1f, 130f);
 
-        // ---- placement of existing objects ----
-        Vector3 spawn = new Vector3(0, 1f, -5f);
-        Vector3 center = new Vector3(0, 1f, 0);
-
-        for (int i = 0; i < shops.Count; i++)
+        float[] wallX = { 0f, 0f, 58f, -58f };
+        float[] wallZ = { 58f, -58f, 0f, 0f };
+        for (int i = 0; i < 4; i++)
         {
-            Vector3 p = new Vector3(-7f - i * 3f, 1f, 3f);
-            PlaceFacing(shops[i], p, spawn);
-            if (i == 0) Sign("SHOP", p + Vector3.up * 3.4f, spawn, board, C("#ffb02e"), 3f);
-        }
-        for (int i = 0; i < bins.Count; i++)
-        {
-            Vector3 p = new Vector3(7f + i * 3f, 1f, 3f);
-            PlaceFacing(bins[i], p, spawn);
-            if (i == 0) Sign("SELL", p + Vector3.up * 3.0f, spawn, board, C("#6fe39a"), 2.4f);
+            GameObject wall = new GameObject("World Wall " + i);
+            wall.transform.SetParent(root, false);
+            wall.transform.position = new Vector3(wallX[i], 20f, wallZ[i]);
+            wall.layer = groundLayer;
+            wall.AddComponent<BoxCollider>().size = i < 2 ? new Vector3(120f, 40f, 1f) : new Vector3(1f, 40f, 120f);
         }
 
-        if (rocks.Count > 0)
+        Shop[] shops = Object.FindObjectsByType<Shop>(FindObjectsSortMode.None);
+        for (int i = 0; i < shops.Length; i++)
         {
-            for (int i = 0; i < rocks.Count; i++) rocks[i].position = RockPos(i, zoneCenters);
-            int target = Mathf.Max(rocks.Count, 18);
-            int existing = rocks.Count;
-            for (int i = existing; i < target; i++)
+            shops[i].transform.SetPositionAndRotation(ShopPosition + Vector3.right * (i * 7f), Quaternion.identity);
+        }
+
+        Box("Shop Backdrop", root, ShopPosition + new Vector3(1.2f, 2.1f, 0.9f), new Vector3(6.4f, 4.2f, 0.3f), 0f, backdrop, true);
+        Box("Shop Backdrop Trim", root, ShopPosition + new Vector3(1.2f, 4.25f, 0.9f), new Vector3(6.6f, 0.15f, 0.4f), 0f, trim, false);
+        Box("Computer Backdrop", root, ComputerPosition + new Vector3(0f, 2.1f, 0.9f), new Vector3(3.4f, 4.2f, 0.3f), 0f, backdrop, true);
+        Box("Computer Backdrop Trim", root, ComputerPosition + new Vector3(0f, 4.25f, 0.9f), new Vector3(3.6f, 0.15f, 0.4f), 0f, trim, false);
+
+        PlaceRocks(zoneCenters);
+
+        Monster[] monsters = Object.FindObjectsByType<Monster>(FindObjectsSortMode.None);
+        for (int i = 0; i < monsters.Length; i++)
+        {
+            float angle = (200f + i * 50f) * Mathf.Deg2Rad;
+            monsters[i].transform.position = new Vector3(Mathf.Cos(angle) * 34f, 0f, Mathf.Sin(angle) * 34f);
+        }
+
+        GameObject computer = new GameObject("Computer");
+        computer.transform.SetParent(root, false);
+        computer.transform.position = ComputerPosition;
+        Box("Desk Top", computer.transform, new Vector3(0f, 0.85f, 0f), new Vector3(2f, 0.08f, 0.9f), 0f, deskTop, true);
+        float[] legX = { -0.9f, 0.9f };
+        float[] legZ = { -0.35f, 0.35f };
+        for (int x = 0; x < legX.Length; x++)
+        {
+            for (int z = 0; z < legZ.Length; z++)
             {
-                var clone = Object.Instantiate(rocks[0].gameObject);
-                clone.name = rocks[0].name + "_" + i;
-                clone.transform.SetParent(null);
-                clone.transform.position = RockPos(i, zoneCenters);
+                Box("Desk Leg", computer.transform, new Vector3(legX[x], 0.4f, legZ[z]), new Vector3(0.1f, 0.8f, 0.1f), 0f, deskWood, true);
             }
+        }
+
+        Box("Keyboard", computer.transform, new Vector3(0f, 0.9f, -0.15f), new Vector3(0.7f, 0.03f, 0.25f), 0f, keyboard, false);
+        Box("Screen Stand", computer.transform, new Vector3(0f, 1f, 0.15f), new Vector3(0.12f, 0.3f, 0.08f), 0f, keyboard, false);
+        computer.AddComponent<RippedComputer>();
+
+        GameObject title = new GameObject("Title Sign");
+        title.transform.SetParent(root, false);
+        title.transform.position = new Vector3(0f, 12f, 40f);
+        TextFactory.Create(title.transform, "Title Text", "RIPPED", Vector3.zero, 0.5f, new Color(1f, 0.69f, 0.18f), TextAnchor.MiddleCenter);
+
+        ApplyEnvironment();
+        PlacePlayer();
+
+        AssetDatabase.SaveAssets();
+        Debug.Log("[RippedMap] Map built.");
+    }
+
+    private static void PlaceRocks(Vector3[] zoneCenters)
+    {
+        GameObject miningArea = GameObject.Find("MiningArea");
+        RockSpawnPoint[] spawns = Object.FindObjectsByType<RockSpawnPoint>(FindObjectsSortMode.None);
+        System.Array.Sort(spawns, (a, b) => string.CompareOrdinal(a.name, b.name));
+
+        GameObject rockPrefab = null;
+        for (int i = 0; i < spawns.Length; i++)
+        {
+            SerializedObject serialized = new SerializedObject(spawns[i]);
+            SerializedProperty prefabProperty = serialized.FindProperty("rockPrefab");
+            SerializedProperty rockProperty = serialized.FindProperty("currentRock");
+            if (rockPrefab == null && prefabProperty != null)
+            {
+                rockPrefab = prefabProperty.objectReferenceValue as GameObject;
+            }
+
+            Vector3 position = RockPosition(i, zoneCenters);
+            Quaternion rotation = Quaternion.Euler(0f, 70f * i + 20f, 0f);
+            spawns[i].transform.SetPositionAndRotation(position, rotation);
+
+            MineableRock rock = rockProperty != null ? rockProperty.objectReferenceValue as MineableRock : null;
+            if (rock != null)
+            {
+                rock.transform.SetPositionAndRotation(position, rotation);
+            }
+        }
+
+        if (rockPrefab == null)
+        {
+            Debug.LogWarning("[RippedMap] No rock prefab found on a RockSpawnPoint, extra rock spots skipped.");
+            return;
+        }
+
+        for (int i = spawns.Length; i < TargetRockCount; i++)
+        {
+            Vector3 position = RockPosition(i, zoneCenters);
+            Quaternion rotation = Quaternion.Euler(0f, 70f * i + 20f, 0f);
+
+            GameObject rockObject = (GameObject)PrefabUtility.InstantiatePrefab(rockPrefab);
+            rockObject.name = "MiningRock " + (i + 1);
+            rockObject.transform.SetPositionAndRotation(position, rotation);
+
+            GameObject spawnObject = new GameObject("RockSpawn " + (i + 1));
+            spawnObject.transform.SetPositionAndRotation(position, rotation);
+            if (miningArea != null)
+            {
+                rockObject.transform.SetParent(miningArea.transform, true);
+                spawnObject.transform.SetParent(miningArea.transform, true);
+            }
+
+            RockSpawnPoint spawn = spawnObject.AddComponent<RockSpawnPoint>();
+            SerializedObject serialized = new SerializedObject(spawn);
+            SerializedProperty prefabProperty = serialized.FindProperty("rockPrefab");
+            SerializedProperty rockProperty = serialized.FindProperty("currentRock");
+            if (prefabProperty != null)
+            {
+                prefabProperty.objectReferenceValue = rockPrefab;
+            }
+
+            if (rockProperty != null)
+            {
+                rockProperty.objectReferenceValue = rockObject.GetComponent<MineableRock>();
+            }
+
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+    }
+
+    private static void PlacePlayer()
+    {
+        GameObject spawnPoint = GameObject.Find("SpawnPoint");
+        if (spawnPoint != null)
+        {
+            spawnPoint.transform.SetPositionAndRotation(SpawnPosition, Quaternion.identity);
+        }
+
+        ArmLocomotion player = Object.FindFirstObjectByType<ArmLocomotion>();
+        if (player != null)
+        {
+            player.transform.SetPositionAndRotation(SpawnPosition, Quaternion.identity);
         }
         else
         {
-            Debug.LogWarning("[MapBuilder] No RockSpawnPoint found in the scene. Add one, then run RIPPED > Build Map again.");
+            Debug.LogWarning("[RippedMap] No ArmLocomotion in the scene, player not moved.");
         }
+    }
 
-        for (int i = 0; i < monsters.Count; i++)
+    private static void ApplyEnvironment()
+    {
+        Color sky = new Color(0.55f, 0.78f, 1f);
+
+        Light sun = null;
+        Light[] lights = Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
+        for (int i = 0; i < lights.Length; i++)
         {
-            float a = (200f + i * 50f) * Mathf.Deg2Rad;
-            monsters[i].position = new Vector3(Mathf.Cos(a) * 34f, 0f, Mathf.Sin(a) * 34f);
+            if (lights[i].type == LightType.Directional)
+            {
+                sun = lights[i];
+                break;
+            }
         }
 
-        // ---- computer ----
-        var comp = new GameObject("Computer");
-        comp.transform.SetParent(root, false);
-        comp.transform.position = new Vector3(0, 1f, 8f);
-        Box("DeskTop", comp.transform, new Vector3(0, 0.85f, 0), new Vector3(2f, 0.08f, 0.9f), deskTop);
-        float[] dx = { -0.9f, 0.9f };
-        float[] dz = { -0.35f, 0.35f };
-        foreach (float x in dx) foreach (float z in dz)
-            Box("DeskLeg", comp.transform, new Vector3(x, 0.4f, z), new Vector3(0.1f, 0.8f, 0.1f), deskM);
-        Box("Keyboard", comp.transform, new Vector3(0, 0.9f, -0.15f), new Vector3(0.7f, 0.03f, 0.25f), kbM, false);
-        Box("ScreenStand", comp.transform, new Vector3(0, 1.0f, 0.15f), new Vector3(0.12f, 0.3f, 0.08f), kbM, false);
-        comp.AddComponent<RippedComputer>();
-
-        // ---- big title on the north cliff ----
-        var titleGo = new GameObject("TitleSign");
-        titleGo.transform.SetParent(root, false);
-        titleGo.transform.position = new Vector3(0, 12f, 40f);
-        Label("RIPPED", titleGo.transform, Vector3.zero, Quaternion.identity, 4.5f, C("#ffb02e"));
-
-        // ---- light, fog, sky ----
-        var sun = Object.FindObjectsOfType<Light>().FirstOrDefault(l => l.type == LightType.Directional);
         if (sun == null)
         {
-            var lg = new GameObject("Sun");
-            sun = lg.AddComponent<Light>();
+            GameObject sunObject = new GameObject("Sun");
+            sun = sunObject.AddComponent<Light>();
             sun.type = LightType.Directional;
         }
+
         sun.transform.rotation = Quaternion.Euler(52f, -35f, 0f);
-        sun.color = C("#fff0d6");
+        sun.color = new Color(1f, 0.94f, 0.84f);
         sun.intensity = 1.05f;
-        sun.shadows = LightShadows.None; // Quest performance
+        sun.shadows = LightShadows.None;
         RenderSettings.sun = sun;
 
-        RenderSettings.skybox = null;
-        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = C("#d4dcf5");
+        RenderSettings.ambientMode = AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.83f, 0.86f, 0.96f);
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
         RenderSettings.fogStartDistance = 45f;
         RenderSettings.fogEndDistance = 135f;
-        var sky = C("#8cc8ff");
         RenderSettings.fogColor = sky;
-        foreach (var cam in Object.FindObjectsOfType<Camera>(true))
-        {
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = sky;
-        }
 
-        // ---- player spawn ----
-        var rig = FindRig(scene);
-        if (rig != null)
+        Camera[] cameras = Object.FindObjectsByType<Camera>(FindObjectsSortMode.None);
+        for (int i = 0; i < cameras.Length; i++)
         {
-            rig.position = spawn;
-            rig.rotation = Quaternion.identity;
+            cameras[i].clearFlags = CameraClearFlags.SolidColor;
+            cameras[i].backgroundColor = sky;
         }
-        else
-        {
-            Debug.LogWarning("[MapBuilder] Couldn't find the XR rig. Move your player to (0, 1, -5) by hand.");
-        }
+    }
 
-        // ---- NavMesh for the monster ----
-        try
+    private static Vector3 RockPosition(int index, Vector3[] zoneCenters)
+    {
+        int zone = index % 3;
+        int ring = index / 3;
+        float angle = (ring * 55f + zone * 20f) * Mathf.Deg2Rad;
+        float radius = 3.5f + (ring % 4) * 1.8f;
+        return zoneCenters[zone] + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius);
+    }
+
+    private static bool NearAny(Vector3 point, Vector3[] centers, float distance)
+    {
+        for (int i = 0; i < centers.Length; i++)
         {
-            var surf = rootGo.AddComponent<NavMeshSurface>();
-            surf.collectObjects = CollectObjects.Children;
-            surf.BuildNavMesh();
-            if (surf.navMeshData != null && !AssetDatabase.Contains(surf.navMeshData))
+            if ((centers[i] - point).magnitude < distance)
             {
-                string p = "Assets/Scenes/RIPPED_NavMesh.asset";
-                AssetDatabase.DeleteAsset(p);
-                AssetDatabase.CreateAsset(surf.navMeshData, p);
+                return true;
             }
         }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning("[MapBuilder] NavMesh bake skipped: " + e.Message);
-        }
 
-        AssetDatabase.SaveAssets();
-        Selection.activeGameObject = rootGo;
-        Debug.Log("[MapBuilder] RIPPED map built.");
-    }
-
-    // ---------- helpers ----------
-    static Vector3 RockPos(int i, Vector3[] zc)
-    {
-        int zone = i % 3;
-        int k = i / 3;
-        float ang = (k * 55f + zone * 20f) * Mathf.Deg2Rad;
-        float r = 3.5f + (k % 4) * 1.8f;
-        return zc[zone] + new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r);
-    }
-
-    static void PlaceFacing(Transform t, Vector3 pos, Vector3 lookAt)
-    {
-        t.position = pos;
-        Vector3 d = lookAt - pos;
-        d.y = 0;
-        if (d.sqrMagnitude > 0.001f) t.rotation = Quaternion.LookRotation(d);
-    }
-
-    static float Rand(float a, float b) { return a + (float)rng.NextDouble() * (b - a); }
-
-    static Color C(string hex)
-    {
-        Color c;
-        ColorUtility.TryParseHtmlString(hex, out c);
-        return c;
-    }
-
-    static List<Transform> FindByType(string typeName)
-    {
-        return Object.FindObjectsOfType<MonoBehaviour>(true)
-            .Where(m => m != null && m.GetType().Name == typeName)
-            .Select(m => m.transform).Distinct().OrderBy(t => t.name).ToList();
-    }
-
-    static bool IsOldCourse(GameObject go)
-    {
-        string n = go.name.ToLowerInvariant();
-        if (go.name == RootName) return false;
-        string[] skip = { "xr", "rig", "player", "camera", "light", "manager", "system", "event", "canvas", "monster", "shop", "wallet", "volume" };
-        foreach (var s in skip) if (n.Contains(s)) return false;
-        string[] keys = { "test", "course", "demo", "playground", "obstacle", "level", "arena", "floor", "ground", "terrain" };
-        foreach (var k in keys) if (n.Contains(k)) return true;
         return false;
     }
 
-    static Transform FindRig(Scene scene)
+    private static float Rand(float min, float max)
     {
-        string[] keys = { "xr origin", "xr rig", "xrorigin", "player", "rig" };
-        foreach (var k in keys)
-            foreach (var go in scene.GetRootGameObjects())
-                if (go.name != RootName && go.name.ToLowerInvariant().Contains(k)) return go.transform;
-        return null;
+        return min + (float)random.NextDouble() * (max - min);
     }
 
-    static Material Mat(string name, Color c, float emission = 0f)
+    private static Material Mat(string materialName, string hex, float emission)
     {
-        if (!AssetDatabase.IsValidFolder("Assets/Materials")) AssetDatabase.CreateFolder("Assets", "Materials");
-        if (!AssetDatabase.IsValidFolder(MatDir)) AssetDatabase.CreateFolder("Assets/Materials", "Generated");
-        string path = MatDir + "/" + name + ".mat";
-        var m = AssetDatabase.LoadAssetAtPath<Material>(path);
-        if (m == null)
+        if (!AssetDatabase.IsValidFolder("Assets/Materials"))
         {
-            var sh = Shader.Find("Universal Render Pipeline/Lit");
-            if (sh == null) sh = Shader.Find("Standard");
-            m = new Material(sh);
-            AssetDatabase.CreateAsset(m, path);
+            AssetDatabase.CreateFolder("Assets", "Materials");
         }
-        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
-        if (m.HasProperty("_Color")) m.SetColor("_Color", c);
-        if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.08f);
-        if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+
+        if (!AssetDatabase.IsValidFolder(MaterialFolder))
+        {
+            AssetDatabase.CreateFolder("Assets/Materials", "RippedMap");
+        }
+
+        string path = MaterialFolder + "/" + materialName + ".mat";
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            material = new Material(shader);
+            AssetDatabase.CreateAsset(material, path);
+        }
+
+        ColorUtility.TryParseHtmlString(hex, out Color color);
+        if (material.HasProperty("_BaseColor"))
+        {
+            material.SetColor("_BaseColor", color);
+        }
+
+        if (material.HasProperty("_Color"))
+        {
+            material.SetColor("_Color", color);
+        }
+
+        if (material.HasProperty("_Smoothness"))
+        {
+            material.SetFloat("_Smoothness", 0.08f);
+        }
+
+        if (material.HasProperty("_Metallic"))
+        {
+            material.SetFloat("_Metallic", 0f);
+        }
+
         if (emission > 0f)
         {
-            m.EnableKeyword("_EMISSION");
-            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
-            if (m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", c * emission);
+            material.EnableKeyword("_EMISSION");
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            if (material.HasProperty("_EmissionColor"))
+            {
+                material.SetColor("_EmissionColor", color * emission);
+            }
         }
-        EditorUtility.SetDirty(m);
-        return m;
+
+        EditorUtility.SetDirty(material);
+        return material;
     }
 
-    static GameObject Box(string name, Transform parent, Vector3 pos, Vector3 scale, Material m, bool collider = true, float yaw = 0f)
+    private static GameObject Box(string objectName, Transform parent, Vector3 position, Vector3 scale, float yaw, Material material, bool collider)
     {
-        var g = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        g.name = name;
-        g.transform.SetParent(parent, false);
-        g.transform.localPosition = pos;
-        g.transform.localScale = scale;
-        g.transform.localRotation = Quaternion.Euler(0, yaw, 0);
-        g.GetComponent<MeshRenderer>().sharedMaterial = m;
-        g.isStatic = true;
-        if (!collider) Object.DestroyImmediate(g.GetComponent<Collider>());
-        return g;
-    }
+        GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        box.name = objectName;
+        box.transform.SetParent(parent, false);
+        box.transform.localPosition = position;
+        box.transform.localScale = scale;
+        box.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+        box.GetComponent<MeshRenderer>().sharedMaterial = material;
+        box.layer = groundLayer;
+        GameObjectUtility.SetStaticEditorFlags(box, StaticEditorFlags.BatchingStatic | StaticEditorFlags.OccluderStatic | StaticEditorFlags.OccludeeStatic);
+        if (!collider)
+        {
+            Object.DestroyImmediate(box.GetComponent<Collider>());
+        }
 
-    static void Sign(string text, Vector3 pos, Vector3 facePoint, Material board, Color textCol, float w)
-    {
-        var g = new GameObject("Sign_" + text);
-        g.transform.SetParent(root, false);
-        g.transform.position = pos;
-        Vector3 away = pos - facePoint;
-        away.y = 0;
-        if (away.sqrMagnitude > 0.001f) g.transform.rotation = Quaternion.LookRotation(away);
-        Box("Board", g.transform, Vector3.zero, new Vector3(w, 0.9f, 0.12f), board, false);
-        Label(text, g.transform, new Vector3(0, 0, -0.08f), Quaternion.identity, 0.55f, textCol);
-    }
-
-    static void Label(string text, Transform parent, Vector3 lp, Quaternion lr, float height, Color col)
-    {
-        var g = new GameObject("Label_" + text);
-        g.transform.SetParent(parent, false);
-        g.transform.localPosition = lp;
-        g.transform.localRotation = lr;
-        var tm = g.AddComponent<TextMesh>();
-        var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        tm.font = font;
-        tm.text = text;
-        tm.fontSize = 100;
-        tm.characterSize = height / 10f;
-        tm.anchor = TextAnchor.MiddleCenter;
-        tm.alignment = TextAlignment.Center;
-        tm.color = col;
-        g.GetComponent<MeshRenderer>().sharedMaterial = font.material;
+        return box;
     }
 }

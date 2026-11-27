@@ -18,6 +18,9 @@ public sealed class FingerChain
     public Transform[] bones = new Transform[0];
     public float maxAngleDegrees = 80f;
     public Vector3 curlAxis = Vector3.right;
+    // One axis per bone, each expressed in that bone's own local space. They all describe the same world
+    // direction, so every joint bends the same way even when the bones' local axes are rotated differently.
+    public Vector3[] jointAxes = new Vector3[0];
     [Range(0.3f, 1.2f)] public float jointFalloff = 1f;
 }
 
@@ -117,13 +120,11 @@ public sealed class HandFingerCurl : MonoBehaviour
 
         triggerTarget = device.TryGetFeatureValue(CommonUsages.trigger, out float trigger) ? trigger : 0f;
         gripTarget = device.TryGetFeatureValue(CommonUsages.grip, out float grip) ? grip : 0f;
-
         bool thumbActive = ReadBool(device, CommonUsages.primaryButton)
             || ReadBool(device, CommonUsages.secondaryButton)
             || ReadBool(device, CommonUsages.primaryTouch)
             || ReadBool(device, CommonUsages.secondaryTouch)
             || ReadBool(device, CommonUsages.primary2DAxisTouch);
-
         thumbTarget = thumbActive ? 1f : 0f;
     }
 
@@ -148,14 +149,20 @@ public sealed class HandFingerCurl : MonoBehaviour
     private void ApplyChain(int chainIndex, FingerChain chain)
     {
         Quaternion[] rest = restRotations[chainIndex];
-        Vector3 axis = chain.curlAxis.sqrMagnitude > 0.0001f ? chain.curlAxis.normalized : Vector3.right;
-
+        Vector3 fallbackAxis = chain.curlAxis.sqrMagnitude > 0.0001f ? chain.curlAxis.normalized : Vector3.right;
+        bool hasJointAxes = chain.jointAxes != null && chain.jointAxes.Length >= chain.bones.Length;
         for (int j = 0; j < chain.bones.Length && j < rest.Length; j++)
         {
             Transform bone = chain.bones[j];
             if (bone == null)
             {
                 continue;
+            }
+
+            Vector3 axis = fallbackAxis;
+            if (hasJointAxes && chain.jointAxes[j].sqrMagnitude > 0.0001f)
+            {
+                axis = chain.jointAxes[j].normalized;
             }
 
             float angle = chain.maxAngleDegrees * currentCurl[chainIndex] * Mathf.Pow(chain.jointFalloff, j);
@@ -167,7 +174,6 @@ public sealed class HandFingerCurl : MonoBehaviour
     {
         restRotations = new Quaternion[chains.Length][];
         currentCurl = new float[chains.Length];
-
         for (int i = 0; i < chains.Length; i++)
         {
             Transform[] bones = chains[i].bones;
@@ -190,7 +196,6 @@ public sealed class HandFingerCurl : MonoBehaviour
 
         FingerInput[] defaultInputs = { FingerInput.Trigger, FingerInput.Grip, FingerInput.Thumb, FingerInput.Grip };
         List<FingerChain> found = new List<FingerChain>();
-
         for (int c = 0; c < handBone.childCount; c++)
         {
             List<Transform> bones = new List<Transform>();
@@ -209,7 +214,6 @@ public sealed class HandFingerCurl : MonoBehaviour
         }
 
         chains = found.ToArray();
-
 #if UNITY_EDITOR
         UnityEditor.EditorUtility.SetDirty(this);
 #endif

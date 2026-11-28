@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public static class RippedLeaderboard
 {
@@ -86,6 +87,7 @@ public sealed class RippedComputer : MonoBehaviour
 
     private const string VolumeKey = "ripped.volume";
     private const string SpeedKey = "ripped.armspeed";
+    private const string GraphicsKey = "ripped.graphics";
 
     private static readonly Color BezelColor = new Color(0.02f, 0.025f, 0.04f);
     private static readonly Color PanelColor = new Color(0.05f, 0.07f, 0.11f);
@@ -163,6 +165,8 @@ public sealed class RippedComputer : MonoBehaviour
             wallet.Changed += OnCoinsChanged;
             OnCoinsChanged();
         }
+
+        ApplyGraphics(PlayerPrefs.GetInt(GraphicsKey, 1) == 1);
     }
 
     private void OnDestroy()
@@ -292,23 +296,57 @@ public sealed class RippedComputer : MonoBehaviour
 
     private void BuildSettings()
     {
-        TextFactory.Create(content, "VolumeLabel", "VOLUME", new Vector3(-0.78f, 0.1f, -0.01f), Size(0.055f), TextColor, TextAnchor.MiddleLeft);
-        TextMesh volumeText = TextFactory.Create(content, "VolumeValue", Percent(AudioListener.volume), new Vector3(0.3f, 0.1f, -0.01f), Size(0.055f), Accent, TextAnchor.MiddleCenter);
-        Button(pageButtons, content, "-", new Vector2(0.05f, 0.1f), new Vector2(0.15f, 0.11f), () => ChangeVolume(-0.1f, volumeText), 0.07f);
-        Button(pageButtons, content, "+", new Vector2(0.55f, 0.1f), new Vector2(0.15f, 0.11f), () => ChangeVolume(0.1f, volumeText), 0.07f);
+        TextFactory.Create(content, "VolumeLabel", "VOLUME", new Vector3(-0.78f, 0.12f, -0.01f), Size(0.055f), TextColor, TextAnchor.MiddleLeft);
+        TextMesh volumeText = TextFactory.Create(content, "VolumeValue", Percent(AudioListener.volume), new Vector3(0.3f, 0.12f, -0.01f), Size(0.055f), Accent, TextAnchor.MiddleCenter);
+        Button(pageButtons, content, "-", new Vector2(0.05f, 0.12f), new Vector2(0.15f, 0.1f), () => ChangeVolume(-0.1f, volumeText), 0.07f);
+        Button(pageButtons, content, "+", new Vector2(0.55f, 0.12f), new Vector2(0.15f, 0.1f), () => ChangeVolume(0.1f, volumeText), 0.07f);
 
         float speed = player != null ? player.SpeedMultiplier : 1f;
-        TextFactory.Create(content, "SpeedLabel", "ARM SPEED", new Vector3(-0.78f, -0.05f, -0.01f), Size(0.055f), TextColor, TextAnchor.MiddleLeft);
-        TextMesh speedText = TextFactory.Create(content, "SpeedValue", speed.ToString("0.0") + "X", new Vector3(0.3f, -0.05f, -0.01f), Size(0.055f), Accent, TextAnchor.MiddleCenter);
-        Button(pageButtons, content, "-", new Vector2(0.05f, -0.05f), new Vector2(0.15f, 0.11f), () => ChangeSpeed(-0.1f, speedText), 0.07f);
-        Button(pageButtons, content, "+", new Vector2(0.55f, -0.05f), new Vector2(0.15f, 0.11f), () => ChangeSpeed(0.1f, speedText), 0.07f);
+        TextFactory.Create(content, "SpeedLabel", "ARM SPEED", new Vector3(-0.78f, 0f, -0.01f), Size(0.055f), TextColor, TextAnchor.MiddleLeft);
+        TextMesh speedText = TextFactory.Create(content, "SpeedValue", speed.ToString("0.0") + "X", new Vector3(0.3f, 0f, -0.01f), Size(0.055f), Accent, TextAnchor.MiddleCenter);
+        Button(pageButtons, content, "-", new Vector2(0.05f, 0f), new Vector2(0.15f, 0.1f), () => ChangeSpeed(-0.1f, speedText), 0.07f);
+        Button(pageButtons, content, "+", new Vector2(0.55f, 0f), new Vector2(0.15f, 0.1f), () => ChangeSpeed(0.1f, speedText), 0.07f);
 
-        TextFactory.Create(content, "NameLabel", "NAME", new Vector3(-0.78f, -0.2f, -0.01f), Size(0.055f), TextColor, TextAnchor.MiddleLeft);
-        TextMesh nameText = TextFactory.Create(content, "NameValue", MonkeProfile.CurrentName, new Vector3(0.3f, -0.2f, -0.01f), Size(0.055f), Accent, TextAnchor.MiddleCenter);
-        Button(pageButtons, content, "<", new Vector2(-0.12f, -0.2f), new Vector2(0.15f, 0.11f), () => CycleName(-1, nameText), 0.07f);
-        Button(pageButtons, content, ">", new Vector2(0.72f, -0.2f), new Vector2(0.15f, 0.11f), () => CycleName(1, nameText), 0.07f);
+        TextFactory.Create(content, "GraphicsLabel", "GRAPHICS", new Vector3(-0.78f, -0.12f, -0.01f), Size(0.055f), TextColor, TextAnchor.MiddleLeft);
+        TextMesh graphicsText = TextFactory.Create(content, "GraphicsValue", GraphicsLabel(), new Vector3(0.25f, -0.12f, -0.01f), Size(0.055f), Accent, TextAnchor.MiddleCenter);
+        Button(pageButtons, content, "SWITCH", new Vector2(0.62f, -0.12f), new Vector2(0.3f, 0.1f), () => ToggleGraphics(graphicsText), 0.04f);
+
+        TextFactory.Create(content, "NameLabel", "NAME", new Vector3(-0.78f, -0.24f, -0.01f), Size(0.055f), TextColor, TextAnchor.MiddleLeft);
+        TextMesh nameText = TextFactory.Create(content, "NameValue", MonkeProfile.CurrentName, new Vector3(0.3f, -0.24f, -0.01f), Size(0.055f), Accent, TextAnchor.MiddleCenter);
+        Button(pageButtons, content, "<", new Vector2(-0.12f, -0.24f), new Vector2(0.15f, 0.1f), () => CycleName(-1, nameText), 0.07f);
+        Button(pageButtons, content, ">", new Vector2(0.72f, -0.24f), new Vector2(0.15f, 0.1f), () => CycleName(1, nameText), 0.07f);
 
         TextFactory.Create(content, "Footer", "SETTINGS SAVE AUTOMATICALLY", new Vector3(0f, -0.4f, -0.01f), Size(0.035f), DimColor, TextAnchor.MiddleCenter);
+    }
+
+    private static string GraphicsLabel()
+    {
+        return PlayerPrefs.GetInt(GraphicsKey, 1) == 1 ? "HIGH" : "LOW";
+    }
+
+    private void ToggleGraphics(TextMesh label)
+    {
+        bool high = PlayerPrefs.GetInt(GraphicsKey, 1) != 1;
+        PlayerPrefs.SetInt(GraphicsKey, high ? 1 : 0);
+        ApplyGraphics(high);
+        label.text = GraphicsLabel();
+    }
+
+    private static void ApplyGraphics(bool high)
+    {
+        Volume[] volumes = FindObjectsByType<Volume>(FindObjectsSortMode.None);
+        for (int i = 0; i < volumes.Length; i++)
+        {
+            if (volumes[i].name == "RIPPED_PostFX")
+            {
+                volumes[i].enabled = high;
+            }
+        }
+
+        if (RenderSettings.sun != null)
+        {
+            RenderSettings.sun.shadows = high ? LightShadows.Soft : LightShadows.None;
+        }
     }
 
     private static string Percent(float value)

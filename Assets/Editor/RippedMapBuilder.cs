@@ -53,8 +53,8 @@ public static class RippedMapBuilder
 
         Material sand = Mat("Sand", "#d9b77a", 0f);
         Material[] pads = { Mat("PadA", "#b98b52", 0f), Mat("PadB", "#9a7a8a", 0f), Mat("PadC", "#7a9a80", 0f) };
-        Material cliffA = Mat("CliffA", "#8a5a44", 0f);
-        Material cliffB = Mat("CliffB", "#6f4a3d", 0f);
+        Material cliffA = Mat("CliffA", "#8a5a44", 0f, 0.45f);
+        Material cliffB = Mat("CliffB", "#6f4a3d", 0f, 0.45f);
         Material band = Mat("Band", "#d98c4a", 0f);
         Material plaza = Mat("Plaza", "#3f4a66", 0f);
         Material step = Mat("Step", "#566086", 0f);
@@ -62,8 +62,8 @@ public static class RippedMapBuilder
         Material post = Mat("Post", "#2b2f3a", 0f);
         Material lamp = Mat("Lamp", "#ffd37a", 2f);
         Material backdrop = Mat("Backdrop", "#2b3350", 0f);
-        Material[] mesaMats = { Mat("MesaA", "#c86b4a", 0f), Mat("MesaB", "#a9565a", 0f), Mat("MesaC", "#d08a53", 0f) };
-        Material boulder = Mat("Boulder", "#9b6b50", 0f);
+        Material[] mesaMats = { Mat("MesaA", "#c86b4a", 0f, 0.3f), Mat("MesaB", "#a9565a", 0f, 0.3f), Mat("MesaC", "#d08a53", 0f, 0.3f) };
+        Material boulder = Mat("Boulder", "#9b6b50", 0f, 0.15f);
         Material deskWood = Mat("DeskWood", "#7a4a2e", 0f);
         Material deskTop = Mat("DeskTop", "#e8d9b5", 0f);
         Material keyboard = Mat("Keyboard", "#2b2f3a", 0f);
@@ -210,6 +210,15 @@ public static class RippedMapBuilder
         TextFactory.Create(title.transform, "Title Text", "RIPPED", Vector3.zero, 0.5f, new Color(1f, 0.69f, 0.18f), TextAnchor.MiddleCenter);
 
         ApplyEnvironment();
+        try
+        {
+            RippedVisuals.Apply();
+        }
+        catch (System.Exception exception)
+        {
+            Debug.LogWarning("[RippedMap] Visuals step failed: " + exception.Message);
+        }
+
         PlacePlayer();
 
         AssetDatabase.SaveAssets();
@@ -375,7 +384,7 @@ public static class RippedMapBuilder
         return min + (float)random.NextDouble() * (max - min);
     }
 
-    private static Material Mat(string materialName, string hex, float emission)
+    private static Material Mat(string materialName, string hex, float emission, float strata = 0f)
     {
         if (!AssetDatabase.IsValidFolder("Assets/Materials"))
         {
@@ -387,18 +396,26 @@ public static class RippedMapBuilder
             AssetDatabase.CreateFolder("Assets/Materials", "RippedMap");
         }
 
-        string path = MaterialFolder + "/" + materialName + ".mat";
-        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
-        if (material == null)
+        Shader shader = RippedVisuals.FindEpicShader();
+        if (shader == null)
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            shader = Shader.Find("Universal Render Pipeline/Lit");
             if (shader == null)
             {
                 shader = Shader.Find("Standard");
             }
+        }
 
+        string path = MaterialFolder + "/" + materialName + ".mat";
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (material == null)
+        {
             material = new Material(shader);
             AssetDatabase.CreateAsset(material, path);
+        }
+        else if (material.shader != shader)
+        {
+            material.shader = shader;
         }
 
         ColorUtility.TryParseHtmlString(hex, out Color color);
@@ -410,6 +427,16 @@ public static class RippedMapBuilder
         if (material.HasProperty("_Color"))
         {
             material.SetColor("_Color", color);
+        }
+
+        if (material.HasProperty("_ShadeColor"))
+        {
+            material.SetColor("_ShadeColor", RippedVisuals.ShadeFor(color));
+        }
+
+        if (material.HasProperty("_StrataStrength"))
+        {
+            material.SetFloat("_StrataStrength", strata);
         }
 
         if (material.HasProperty("_Smoothness"))
